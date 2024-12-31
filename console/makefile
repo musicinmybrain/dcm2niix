@@ -59,7 +59,7 @@ debug:
 	g++ -O0 $(LFLAGS) $(UFILES)
 
 jp2:
-	g++ -O0 $(LFLAGS) $(CFILES) -I/opt/homebrew/Cellar/openjpeg/2.5.3/include/openjpeg-2.5/ -L/opt/homebrew/Cellar/openjpeg/2.5.3/lib/ -lopenjp2
+	g++ -O0 $(LFLAGS) $(CFILES)  $(JFLAGS) -I/opt/homebrew/Cellar/openjpeg/2.5.3/include/openjpeg-2.5/ -L/opt/homebrew/Cellar/openjpeg/2.5.3/lib/ -lopenjp2
 
 noroi:
 	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) $(UFILES) -DmyNoRois
