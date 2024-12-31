@@ -19,6 +19,10 @@ LFLAGS=
 # https://clang.llvm.org/docs/AddressSanitizer.html
 # clang++ -O1 -g -fsanitize=address -fno-omit-frame-pointer -I.  main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp base64.c cJSON.c -o dcm2niix -DmyDisableOpenJPEG
 
+#run "ZLIB=1 make" for ZLIB build
+ifeq "$(ZLIB)" "1"
+	CFILES += -DmyDisableMiniZ -lz
+endif
 
 #run "make" for default build
 #run "JPEGLS=1 make" for JPEGLS build
@@ -59,7 +63,7 @@ debug:
 	g++ -O0 $(LFLAGS) $(UFILES)
 
 jp2:
-	g++ -O0 $(LFLAGS) $(CFILES)  $(JFLAGS) -I/opt/homebrew/Cellar/openjpeg/2.5.3/include/openjpeg-2.5/ -L/opt/homebrew/Cellar/openjpeg/2.5.3/lib/ -lopenjp2
+	g++ $(CFLAGS) $(LFLAGS) $(CFILES) $(JFLAGS) -I/opt/homebrew/Cellar/openjpeg/2.5.3/include/openjpeg-2.5/ -L/opt/homebrew/Cellar/openjpeg/2.5.3/lib/ -lopenjp2
 
 noroi:
 	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) $(UFILES) -DmyNoRois

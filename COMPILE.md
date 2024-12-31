@@ -30,7 +30,7 @@ cmake -DUSE_OPENJPEG=ON -DCMAKE_CXX_FLAGS=-g .. && make
 ```
 
 ##### ZLIB BUILD
- If we have zlib, we can use it (-lz) and disable [miniz](https://code.google.com/p/miniz/) (-myDisableMiniZ)
+ If we have zlib, we can use it (-lz) and disable [miniz](https://code.google.com/p/miniz/) (-DmyDisableMiniZ)
 
 ```
 g++ -O3 -DmyDisableOpenJPEG -I. main_console.cpp nii_dicom.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp jpg_0XC3.cpp ujpeg.cpp nii_foreign.cpp -o dcm2niix -lz -DmyDisableMiniZ g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
