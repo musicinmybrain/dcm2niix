@@ -1,24 +1,71 @@
 ## About
 
-The README.md file describes the typical compilation of the software, using the `make` command to build the software. This document describes advanced methods for compiling and tuning the software.
+The [README.md file] describes the typical compilation of the software, using the `cmake` command. This document introduces advanced methods for compiling and tuning the software.
 
-Beyond the complexity of compiling the software, the only downside to adding optional modules is that the dcm2niix executable size will require a tiny bit more disk space. For example, on MacOS the stripped basic executable is 238kb, miniz (GZip support) adds 18kb, NanoJPEG (lossy JPEG support) adds 13kb, CharLS (JPEG-LS support) adds 271kb, and OpenJPEG (JPEG2000 support) adds 192kb. So with all these features installed the executable weighs in at 732kb.
+The design of dcm2niix is fairly modular. In particular, it can be built to use different libraries to handle the decompression and compression of files. It can even be built without these dependencies, resulting in compact software that will be unable to handle compressed images. Beyond the complexity of compiling the software, the only downside to adding optional modules is that the dcm2niix executable size will require a tiny bit more disk space. For example, miniz (GZip support) adds 18kb, NanoJPEG (lossy JPEG support) adds 13kb, CharLS (JPEG-LS support) adds 271kb, and OpenJPEG (JPEG2000 support) adds 192kb.
+
+The first two sections describe using `make` and `cmake` to build dcm2niix. The subsequent sections provide in depth notes on compiling directly from the command line. Beware that those notes can get outdated as compilers and options evolve. Further, they can make explicit assumptions regarding the location of libraries. You can always run the `make` script to see the current typical compile for your system.
+
+##### MAKE INSTALLATION
+
+To download and compile dcm2niix with make you can run these commands from the command line (remove `--branch development` to get the current stable release):
+
+```bash
+git clone --branch development git@github.com:rordenlab/dcm2niix.git
+cd dcm2niix\console
+make
+```
+
+The make file supports different build configurations. 
+
+| command         | conifguratio             |
+| --------------- | ------------------------ |
+| make            |                          |
+| make debug      | unoptimized code         |
+| make jp2        | JP2000 support           |
+| make noroi      | Ignore [overlays](https://dicom.nema.org/dicom/2013/output/chtml/part03/sect_C.9.html#:~:text=A%20Region%20of%20Interest%20(ROI,the%20image%20of%20particular%20interest.)|
+| make sanitize   | [memory error detector.](https://clang.llvm.org/docs/AddressSanitizer.html) |
+| make wasm       | [WebAssembly](https://github.com/rordenlab/dcm2niix/tree/master/js)|.
+
+You can also append prefix(es) to each of these configurations, for example `JPEGLS=1 ZLIB=1 make jp2` will use the system zlib, CharLS and OpenJPEG:
+
+| prefix          | features                 |
+| --------------- | ------------------------ |
+| JPEGLS=1        | Statically add CharLS library |
+| ZLIB=1          | Dynamically link to system zlib instead of static miniz |
+| JNIfTI=0        | compile without [jnifti](https://github.com/NeuroJSON/jnifti) support |
+##### CMAKE INSTALLATION
+
+`cmake` can automatically aid complex builds. The [home page](https://github.com/rordenlab/dcm2niix) describes typical cmake options.
+
+To download and compile dcm2niix with cmake you can run these commands from the command line (remove `--branch development` to get the current stable release; remove `-DZLIB_IMPLEMENTATION=Cloudflare` to produce with the miniz compressor, remove `-DUSE_JPEGLS=ON` to build without CharLS and remove `-DUSE_OPENJPEG=ON` to compile without JPEG2000 support):
+
+```bash
+git clone --branch development git@github.com:rordenlab/dcm2niix.git
+cd dcm2niix
+mkdir build && cd build
+cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
+make
+```
+
+If you get the following error:
+
+```
+fatal: unable to connect to github.com:
+github.com[0: 140.82.121.4]: errno=Connection timed out
+```
+
+This suggests git is unable to connect using ssh. One solution is to use https instead:
+
+```
+git clone --branch development https://github.com/rordenlab/dcm2niix.git
+```
 
 ## Choosing your compiler
 
 The text below generally describes how to build dcm2niix using the [GCC](https://gcc.gnu.org) compiler using the `g++` command. However, the code is portable and you can use different compilers. For [clang/llvm](https://clang.llvm.org) compile using `clang++`.  If you have the [Intel C compiler](https://software.intel.com/en-us/c-compilers), you can substitute the `icc` command. The code is compatible with Microsoft's VS 2015 or later. For [Microsoft's C compiler](http://landinghub.visualstudio.com/visual-cpp-build-tools) you would use the `cl` command. In theory, the code should support other compilers, but this has not been tested. Be aware that if you do not have gcc installed the `g++` command may use a default to a compiler (e.g. clang). To check what compiler was used, run the dcm2niix software: it always reports the version and the compiler used for the build.
 
 Note that in the commands below we increase the [stack size](https://stackoverflow.com/questions/18909395/how-do-i-increase-the-stack-size-when-compiling-with-clang-on-os-x)zgit to 16mb, which is larger than the Unix (8mb) and Windows (1mb) defaults.
-
-## Building the command line version without cmake
-
-You can also build the software without C-make. The easiest way to do this is to run the function "make" from the "console" folder. Note that this only creates the default version of dcm2niix, not the optional batch version described above. The make command simply calls the g++ compiler, and if you want you can tune this for your build. In essence, the make function simply calls
-
-```
-g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
-```
-
-The following sub-sections list how you can modify this basic recipe for your needs.
 
 ## Trouble Shooting
 
@@ -46,7 +93,7 @@ g++ -O3 -s -DmyDisableOpenJPEG -DmyDisableZLib -I. main_console.cpp nii_dicom.cp
 
 ##### DISABLING CLASSIC JPEG
 
-DICOM images can be stored as either raw data or compressed using one of many formats as described by the [transfer syntaxes](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Transfer_Syntaxes_and_Compressed_Images). One of the compressed formats is the lossy classic JPEG format (which is separate from and predates the lossy JPEG 2000 format). This software comes with the [NanoJPEG](http://keyj.emphy.de/nanojpeg/) library to handle these images. However, you can use the `myDisableClassicJPEG` compiler switch to remove this dependency. The resulting executable will be smaller but will not be able to convert images stored with this format.
+DICOM images can be stored as either raw data or compressed using one of many formats as described by the [transfer syntaxes](https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#Transfer_Syntaxes_and_Compressed_Images). One of the compressed formats is the lossy classic JPEG format (which is separate from and predates the JPEG2000 and JPEG-LS formats). This software comes with the [NanoJPEG](http://keyj.emphy.de/nanojpeg/) library to handle these images. However, you can use the `myDisableClassicJPEG` compiler switch to remove this dependency. The resulting executable will be smaller but will not be able to convert images stored with this format.
 
 ```
 g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableClassicJPEG -DmyDisableOpenJPEG g++ -O3 -I. main_console.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp nii_foreign.cpp -o dcm2niix -DmyDisableOpenJPEG -Wl,-stack_size -Wl,3f00000
@@ -131,25 +178,3 @@ lipo -create dcm2niix32 dcm2niix64 -o dcm2niix
 file ./dcm2niix
 ```
 
-##### CMAKE INSTALLATION
-
-While most of this page describes  how to use `make` to compile dcm2niix, `cmake` can automatically aid complex builds. The [home page](https://github.com/rordenlab/dcm2niix) describes typical cmake options. The cmake command will attempt to pull additional code from git as needed for zlib, OpenJPEG etc.  If you get the following error:
-
-```
-fatal: unable to connect to github.com:
-github.com[0: 140.82.121.4]: errno=Connection timed out
-```
-
-This suggests git is unable to connect using ssh. You have two options, first you can disable the cmake option USE_GIT_PROTOCOL (which is on by default). Alternatively, to use https instead using the following lines prior to running cmake:
-
-```
-git config --global url."https://github.com/".insteadOf git@github.com:
-git config --global url."https://".insteadOf git://
-```
-
-Once the installation is completed, you can revert these changes:
-
-```
-git config --global --unset-all url.https://github.com/.insteadof
-git config --global --unset-all url.https://.insteadof
-```
