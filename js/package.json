@@ -1,18 +1,24 @@
 {
   "name": "@niivue/dcm2niix",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "exports": {
     ".": {
       "import": "./dist/index.js"
+    },
+    "./with-jpegls": {
+      "import": "./dist/index.jpegls.js"
     }
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "node esbuild.config.js",
+    "build": "node esbuild.config.js && node esbuild.config.jpegls.js",
     "makeWasm": "make wasm -C ../console",
-    "prebuild": "npm run makeWasm && node scripts/pre-build.js -i src/dcm2niix.js -o src/dcm2niix.js",
+    "makeWasmJpegls": "JPEGLS=1 make wasm-jpegls -C ../console",
+    "fixWasmJs": "node scripts/pre-build.js -i src/dcm2niix.js -o src/dcm2niix.js",
+    "fixWasmJsJpegls": "node scripts/pre-build.js -i src/dcm2niix.jpegls.js -o src/dcm2niix.jpegls.js",
+    "prebuild": "npm run makeWasm && npm run makeWasmJpegls && npm run fixWasmJs && npm run fixWasmJsJpegls",
     "demo": "npm run build && npx http-server .",
     "pub": "npm run build && npm publish --access public"
   },
