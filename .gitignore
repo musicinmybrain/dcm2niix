@@ -16,5 +16,5 @@ __pycache__/
 
 dist
 node_modules
-dcm2niix.js
-dcm2niix.wasm
+dcm2niix*.js
+dcm2niix*.wasm
