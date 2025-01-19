@@ -18,3 +18,10 @@ dist
 node_modules
 dcm2niix*.js
 dcm2niix*.wasm
+
+# pixi environments
+.pixi
+*.egg-info
+
+*.tar.gz
+openjpeg-2.5.3/

@@ -4,7 +4,7 @@ export class Dcm2niix {
   }
 
   init() {
-    this.worker = new Worker(new URL('./worker.jpegls.js', import.meta.url), { type: 'module' });
+    this.worker = new Worker(new URL('./worker.jpeg.js', import.meta.url), { type: 'module' });
     return new Promise((resolve, reject) => {
       // handle worker ready message.
       // This gets reassigned in the run() method, 

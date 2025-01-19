@@ -7,19 +7,20 @@
     ".": {
       "import": "./dist/index.js"
     },
-    "./with-jpegls": {
-      "import": "./dist/index.jpegls.js"
+    "./jpeg": {
+      "import": "./dist/index.jpeg.js"
     }
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "node esbuild.config.js && node esbuild.config.jpegls.js",
+    "build": "node esbuild.config.js && node esbuild.config.jpeg.js",
     "makeWasm": "make wasm -C ../console",
-    "makeWasmJpegls": "JPEGLS=1 make wasm-jpegls -C ../console",
+    "makeWasmJpeg": "JPEGLS=1 make wasm-jpeg -C ../console",
     "fixWasmJs": "node scripts/pre-build.js -i src/dcm2niix.js -o src/dcm2niix.js",
-    "fixWasmJsJpegls": "node scripts/pre-build.js -i src/dcm2niix.jpegls.js -o src/dcm2niix.jpegls.js",
-    "prebuild": "npm run makeWasm && npm run makeWasmJpegls && npm run fixWasmJs && npm run fixWasmJsJpegls",
+    "fixWasmJsJpeg": "node scripts/pre-build.js -i src/dcm2niix.jpeg.js -o src/dcm2niix.jpeg.js",
+    "prebuild": "npm run makeWasm && npm run makeWasmJpeg && npm run fixWasmJs && npm run fixWasmJsJpeg",
     "demo": "npm run build && npx http-server .",
+    "demo-no-build": "npx http-server .",
     "pub": "npm run build && npm publish --access public"
   },
   "keywords": [

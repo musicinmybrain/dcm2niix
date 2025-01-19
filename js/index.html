@@ -18,9 +18,9 @@
   <a id="downloadLink" style="display: none;">Download Processed Image(s)</a>
 
   <script type="module">
-    import { Dcm2niix } from './dist/index.js';
+    // import { Dcm2niix } from './dist/index.js';
     // use below line for jpegls version
-    // import { Dcm2niix } from './dist/index.jpegls.js';
+    import { Dcm2niix } from './dist/index.jpeg.js';
 
     const fileInput = document.getElementById('fileInput');
     const processButton = document.getElementById('processButton');
@@ -52,7 +52,7 @@
       }
       const dcm2niix = new Dcm2niix();
       await dcm2niix.init()
-      const resultFileList = await dcm2niix.inputFromDropItems(files).run()
+      const resultFileList = await dcm2niix.inputFromDropItems(files).v().run()
 
       resultFileList.forEach((resultFile, index) => {
           let url = URL.createObjectURL(resultFile);

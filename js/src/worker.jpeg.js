@@ -2,7 +2,7 @@
 // The worker is of type "module" so that it can use ES6 module syntax.
 // Importantly, the emscripten code must be compiled with: -s EXPORT_ES6=1 -s MODULARIZE=1.
 // This allows proper module bundlers to import the worker and wasm properly with code splitting. 
-import Module from './dcm2niix.jpegls.js';
+import Module from './dcm2niix.jpeg.js';
 
 // initialise an instance of the Emscripten Module so that
 // it is ready when the worker receives a message.
