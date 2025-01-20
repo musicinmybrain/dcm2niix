@@ -15,6 +15,9 @@ The `@niivue/dcm2niix` JavaScript library offers an object oriented API for work
 // <input type="file" id="fileInput" webkitdirectory multiple>
 import { Dcm2niix } from '@niivue/dcm2niix';
 
+// use the jpeg import to load jpegls and j2k build of dcm2niix
+// import { Dcm2niix } from '@niivue/dcm2niix/jpeg';
+
 const dcm2niix = new Dcm2niix();
 // call the init() method to load the wasm before processing any data
 await dcm2niix.init();
@@ -66,6 +69,31 @@ npm install /path/to/niivue-dcm2niix.tgz
 
 ## Development
 
+### Environment setup
+
+You will need:
+- NodeJS/NPM
+- Emscripten
+- Pixi
+- Make/Cmake
+
+[Pixi](https://prefix.dev/) is used to create the environment for building the WASM port of `dcm2niix`. To install pixi, follow their instructions. 
+
+> Note: on macos-arm64, you can get emscripten using homebrew since there is not yet a native arm64 version of emscripten on conda-forge (which is where pixi searches for packages).
+
+### Building dcm2niix WASM
+
+```bash
+pixi run wasm
+```
+
+### clean up after build
+
+```bash
+pixi run clean
+```
+
+### If doing things manually
 First `cd` into the `js` directory of the `dcm2niix` repository.
 
 ```bash
