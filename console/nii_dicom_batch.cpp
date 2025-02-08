@@ -3858,7 +3858,17 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 				isSeriesReported = true;
 			}
 			if (f == 'T') {
-				snprintf(newstr, PATH_MAX, "%0.0f", dcm.dateTime);
+				//issue912
+				int hh = (int)(dcm.dateTime / 10000);
+				int mm = (int)(fmod(dcm.dateTime, 10000) / 100);
+				double ss_raw = fmod(dcm.dateTime, 100);  // Extract seconds (with fraction)
+				// Round seconds
+				int ss = (int)round(ss_raw);
+				// Ensure seconds are within 0-59 range
+				if (ss == 60) {
+					ss = 59;
+				}
+				snprintf(newstr, PATH_MAX, "%02d%02d%02d", hh, mm, ss);
 				strcat(outname, newstr);
 			}
 			if (f == 'U') {
