@@ -6745,11 +6745,13 @@ void sliceTimingXA(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct 
 	//  Ignore first volume: For an example of erroneous first volume timing, see series 10 (Functional_w_SMS=3) https://github.com/rordenlab/dcm2niix/issues/240
 	//  an alternative would be to use 0018,9074 - this would need to be converted from DT to Secs, and is scrambled if de-identifies data see enhanced de-identified series 26 from issue 236
 	uint64_t indx0 = dcmSort[0].indx; // first volume
-	if ((!dcmList[indx0].isXA10A) || (hdr->dim[3] < 1) || (hdr->dim[4] < 1))
+	if ((!dcmList[indx0].isXA) || (hdr->dim[3] < 1) || (hdr->dim[4] < 2))
 		return;
 	if (hdr->dim[3] > kMaxEPI3D) {
 		printWarning("Unable to set Siemens XA sliceTiming due to excessive slices per volume (%d).\n", hdr->dim[3]);
 		return;
+	} else {
+		printWarning("4D Siemens XA images should be exported as enhanced not classic DICOM. Slice times and other properties may be inaccurate.\n");
 	}
 	if ((nConvert == (hdr->dim[3] * hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D - 1)) && (hdr->dim[3] > 1)) {
 		// issue875 use 2nd volume

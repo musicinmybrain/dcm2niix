@@ -891,6 +891,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.isVectorFromBMatrix = false;
 	d.isStackableSeries = false; // combine DCE series https://github.com/rordenlab/dcm2niix/issues/252
 	d.isXA10A = false;			 // https://github.com/rordenlab/dcm2niix/issues/236
+	d.isXA = false;
 	d.triggerDelayTime = 0.0;
 	d.RWVScale = 0.0;
 	d.RWVIntercept = 0.0;
@@ -8498,6 +8499,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	if ((d.isLocalizer) && (strstr(d.seriesDescription, "b1map"))) // issue751 b1map uses same base as scout
 		d.isLocalizer = false;
 	free(dcmDim);
+	d.isXA = isSiemensXA;
 	return d;
 } // readDICOMx()
 
