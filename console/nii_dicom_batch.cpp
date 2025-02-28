@@ -2650,6 +2650,18 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		char sep = '\t';
 		if (opts.isCreateBIDS)
 			sep = ' ';
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+		mrifsStruct.numDti = numVol;
+		mrifsStruct.tdti = (TDTI *)malloc(numVol * sizeof(TDTI));
+		for (int i = 0; i < numVol; i++)
+		{
+			mrifsStruct.tdti[i].V[0] = 0;
+			mrifsStruct.tdti[i].V[1] = 0;
+			mrifsStruct.tdti[i].V[2] = 0;
+			mrifsStruct.tdti[i].V[3] = 0;
+		}
+#else
 		// save bval
 		char txtname[2048] = {""};
 		strcpy(txtname, pathoutname);
@@ -2669,6 +2681,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 			fprintf(fp, "\n");
 		}
 		fclose(fp);
+#endif  // USING_DCM2NIIXFSWRAPPER
 #endif
 	}
 	if (numDti < 1)
@@ -8566,6 +8579,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			return EXIT_SUCCESS;
 	}
 #else
+	// opts.numSeries equals to 1
 	double seriesNum = (double)dcmList[dcmSort[0].indx].seriesUidCrc;
 	if (!isSameDouble(opts.seriesNumber[0], seriesNum))
 		return EXIT_SUCCESS;
@@ -9384,6 +9398,8 @@ int singleDICOM(struct TDCMopts *opts, char *fname) {
 	dcmList[0].converted2NII = 1;
 	dcmList[0] = readDICOMx(nameList.str[0], &prefs, dti4D); // ignore compile warning - memory only freed on first of 2 passes
 	// dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
+        if (opts->isIgnoreSeriesInstanceUID)
+	        dcmList[0].seriesUidCrc = dcmList[0].seriesNum;
 	fillTDCMsort(dcmSort[0], 0, dcmList[0]);
 	int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, dti4D);
 	freeNameList(nameList);
@@ -10587,14 +10603,18 @@ void dcmListDump(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmL
 		memset(mrifsStruct.dicomlst[i], 0, strlen(nameList->str[indx]) + 1);
 		memcpy(mrifsStruct.dicomlst[i], nameList->str[indx], strlen(nameList->str[indx]));
 
-		FILE *fp = stdout;
-		const char *imagelist = getenv("MGH_DCMUNPACK_IMAGELIST");
-		if (imagelist != NULL)
-			fp = fopen(imagelist, "a");
+                FILE *fp = stdout;
+                const char *imagelist = getenv("MGH_DCMUNPACK_IMAGELIST");
+                if (imagelist != NULL)
+                        fp = fopen(imagelist, "a");
+		
 		fprintf(fp, "%s %ld %s %s %f %f %f %f\\%f %c %f %s %s\n",
 				dcmList[indx].patientName, dcmList[indx].seriesNum, dcmList[indx].studyDate, dcmList[indx].studyTime,
 				dcmList[indx].TE, dcmList[indx].TR, dcmList[indx].flipAngle, dcmList[indx].xyzMM[1], dcmList[indx].xyzMM[2],
 				dcmList[indx].phaseEncodingRC, dcmList[indx].pixelBandwidth, nameList->str[indx], dcmList[indx].imageType);
+
+                if (fp != stdout)
+                        fclose(fp);
 	}
 }
 #endif
