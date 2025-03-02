@@ -4739,6 +4739,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	float patientPosition2[kMaxSlice2D];
 	float patientPosition3[kMaxSlice2D];
 	bool isKludgeIssue533 = false;
+	bool isKludgeIssue809 = false;
 	uint32_t dimensionIndexPointer[MAX_NUMBER_OF_DIMENSIONS];
 	size_t dimensionIndexPointerCounter = 0;
 	int maxInStackPositionNumber = 0;
@@ -4933,7 +4934,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				// printf("slice %d---> 0020,9157 = %d %d %d\n", inStackPositionNumber, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2]);
 				//  d.aslFlags = kASL_FLAG_PHILIPS_LABEL; kASL_FLAG_PHILIPS_LABEL
 				if ((nDimIndxVal > 1) && (volumeNumber > 0) && (inStackPositionNumber > 0) && ((d.aslFlags == kASL_FLAG_PHILIPS_LABEL) || (d.aslFlags == kASL_FLAG_PHILIPS_CONTROL))) {
-
 					isKludgeIssue533 = true;
 					for (int i = 0; i < nDimIndxVal; i++)
 						d.dimensionIndexValues[i] = 0;
@@ -4946,6 +4946,14 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					d.dimensionIndexValues[3] = volumeNumber;						   // dim[6] Repeat changes slowest
 					nDimIndxVal = 4;												   // slice < phase < control/label < volume
 																					   // printf("slice %d phase %d control/label %d repeat %d\n", inStackPositionNumber, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL, volumeNumber);
+				} else if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (volumeNumber > 0) && (B0Philips >= 0) && (inStackPositionNumber > 0) && (philMRImageDiffBValueNumber > 0)) {
+					isKludgeIssue809 = true;
+					for (int i = 0; i < nDimIndxVal; i++)
+						d.dimensionIndexValues[i] = 0;
+					d.dimensionIndexValues[0] = gradientOrientationNumberPhilips;
+					d.dimensionIndexValues[1] = floor(B0Philips);
+					d.dimensionIndexValues[2] = inStackPositionNumber;
+					nDimIndxVal = 3;
 				}
 				if ((volumeNumber == 1) && (acquisitionTimePhilips >= 0.0) && (inStackPositionNumber > 0)) {
 					d.CSA.sliceTiming[inStackPositionNumber - 1] = acquisitionTimePhilips;
@@ -8136,6 +8144,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		}*/
 		if ((isKludgeIssue533) && (numDimensionIndexValues > 1))
 			printWarning("Guessing temporal order for Philips enhanced DICOM ASL (issue 532).\n");
+		if ((isKludgeIssue809) && (numDimensionIndexValues > 1))
+			printWarning("Guessing temporal order for Philips enhanced DICOM DWI (issue 809).\n");
 			// sort dimensions
 		if (stackPositionItem < maxVariableItem)
 			qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
