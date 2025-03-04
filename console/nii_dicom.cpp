@@ -4954,6 +4954,18 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					d.dimensionIndexValues[1] = floor(B0Philips);
 					d.dimensionIndexValues[2] = inStackPositionNumber;
 					nDimIndxVal = 3;
+				} else if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (volumeNumber > 0) && (inStackPositionNumber > 0) ) {
+					isKludgeIssue809 = true;
+					for (int i = 0; i < nDimIndxVal; i++)
+						d.dimensionIndexValues[i] = 0;
+					int phase = d.phaseNumber;
+					if (d.phaseNumber < 0)
+						phase = 0;													   // if not set: we are saving as UINT
+					d.dimensionIndexValues[0] = inStackPositionNumber;				   // dim[3] slice changes fastest
+					d.dimensionIndexValues[1] = phase;								   // dim[4] successive volumes are phase
+					d.dimensionIndexValues[2] = 0; 									   // dim[5] Control/Label unused for fMRI
+					d.dimensionIndexValues[3] = volumeNumber;						   // dim[6] Repeat changes slowest
+					nDimIndxVal = 4;												   // slice < phase < control/label < volume
 				}
 				if ((volumeNumber == 1) && (acquisitionTimePhilips >= 0.0) && (inStackPositionNumber > 0)) {
 					d.CSA.sliceTiming[inStackPositionNumber - 1] = acquisitionTimePhilips;
@@ -8145,7 +8157,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		if ((isKludgeIssue533) && (numDimensionIndexValues > 1))
 			printWarning("Guessing temporal order for Philips enhanced DICOM ASL (issue 532).\n");
 		if ((isKludgeIssue809) && (numDimensionIndexValues > 1))
-			printWarning("Guessing temporal order for Philips enhanced DICOM DWI (issue 809).\n");
+			printWarning("Guessing temporal order for Philips enhanced DICOM DWI and fMRI (issue 809).\n");
 			// sort dimensions
 		if (stackPositionItem < maxVariableItem)
 			qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
