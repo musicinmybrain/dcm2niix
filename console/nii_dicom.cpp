@@ -4738,7 +4738,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	float patientPosition1[kMaxSlice2D];
 	float patientPosition2[kMaxSlice2D];
 	float patientPosition3[kMaxSlice2D];
-	bool isKludgeIssue533 = false;
 	bool isKludgeIssue809 = false;
 	uint32_t dimensionIndexPointer[MAX_NUMBER_OF_DIMENSIONS];
 	size_t dimensionIndexPointerCounter = 0;
@@ -4931,10 +4930,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// if we leave the folder MREchoSequence 0018,9114
 			if ((nDimIndxVal > 0) && ((d.manufacturer == kMANUFACTURER_UNKNOWN) || (d.manufacturer == kMANUFACTURER_MEDISO) || (d.manufacturer == kMANUFACTURER_CANON) || (d.manufacturer == kMANUFACTURER_BRUKER) || (d.manufacturer == kMANUFACTURER_PHILIPS)) && (sqDepth00189114 >= sqDepth)) {
 				sqDepth00189114 = -1; // triggered
-				// printf("slice %d---> 0020,9157 = %d %d %d\n", inStackPositionNumber, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2]);
 				//  d.aslFlags = kASL_FLAG_PHILIPS_LABEL; kASL_FLAG_PHILIPS_LABEL
+				//printf("issue809 %d %d %d\n", inStackPositionNumber, philMRImageDiffBValueNumber, gradientOrientationNumberPhilips);
 				if ((nDimIndxVal > 1) && (volumeNumber > 0) && (inStackPositionNumber > 0) && ((d.aslFlags == kASL_FLAG_PHILIPS_LABEL) || (d.aslFlags == kASL_FLAG_PHILIPS_CONTROL))) {
-					isKludgeIssue533 = true;
+					isKludgeIssue809 = true;
 					for (int i = 0; i < nDimIndxVal; i++)
 						d.dimensionIndexValues[i] = 0;
 					int phase = d.phaseNumber;
@@ -4946,14 +4945,20 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					d.dimensionIndexValues[3] = volumeNumber;						   // dim[6] Repeat changes slowest
 					nDimIndxVal = 4;												   // slice < phase < control/label < volume
 																					   // printf("slice %d phase %d control/label %d repeat %d\n", inStackPositionNumber, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL, volumeNumber);
-				} else if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (volumeNumber > 0) && (B0Philips >= 0) && (inStackPositionNumber > 0) && (philMRImageDiffBValueNumber > 0)) {
+				} else if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (volumeNumber > 0) && (gradientOrientationNumberPhilips > 0) && (inStackPositionNumber > 0)) {
 					isKludgeIssue809 = true;
 					for (int i = 0; i < nDimIndxVal; i++)
 						d.dimensionIndexValues[i] = 0;
-					d.dimensionIndexValues[0] = gradientOrientationNumberPhilips;
-					d.dimensionIndexValues[1] = floor(B0Philips);
-					d.dimensionIndexValues[2] = inStackPositionNumber;
-					nDimIndxVal = 3;
+					d.dimensionIndexValues[0] = inStackPositionNumber;
+					d.dimensionIndexValues[1] = philMRImageDiffBValueNumber;
+					d.dimensionIndexValues[2] = gradientOrientationNumberPhilips;
+					// magnitude[0], real[1], imaginary[2] or phase[3]
+					int imageType = 0;
+					if (isReal) imageType = 1;
+					if (isImaginary) imageType = 2;
+					if (isPhase) imageType = 3;
+					d.dimensionIndexValues[3] = imageType;
+					nDimIndxVal = 4;
 				} else if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (volumeNumber > 0) && (inStackPositionNumber > 0) ) {
 					isKludgeIssue809 = true;
 					for (int i = 0; i < nDimIndxVal; i++)
@@ -5020,7 +5025,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				// This will ensure correct ordering of slices in 4D datasets
 				// Canon and Bruker reverse dimensionIndexItem order relative to Philips: new versions introduce compareTDCMdimRev
 				// printf("%d: %d %d %d %d\n", ndim, d.dimensionIndexValues[0], d.dimensionIndexValues[1], d.dimensionIndexValues[2], d.dimensionIndexValues[3]);
-				if ((philMRImageDiffVolumeNumber > 0) && (sliceNumberMrPhilips > 0)) { // issue546: 2005,1596 provides temporal order
+				if ((!isKludgeIssue809) && (philMRImageDiffVolumeNumber > 0) && (sliceNumberMrPhilips > 0)) { // issue546: 2005,1596 provides temporal order
 					dcmDim[numDimensionIndexValues].dimIdx[0] = 1;
 					dcmDim[numDimensionIndexValues].dimIdx[1] = sliceNumberMrPhilips;
 					dcmDim[numDimensionIndexValues].dimIdx[2] = philMRImageDiffVolumeNumber;
@@ -5039,7 +5044,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				dcmDim[numDimensionIndexValues].RWVScale = d.RWVScale;
 				dcmDim[numDimensionIndexValues].RWVIntercept = d.RWVIntercept;
 				// printf("%d %d %g????\n", isTriggerSynced, isProspectiveSynced, d.triggerDelayTime);
-				// TODO533: isKludgeIssue533 alias Philips ASL as FrameDuration?
+				// TODO533: isKludgeIssue809 alias Philips ASL as FrameDuration?
 				// if ((d.triggerDelayTime > 0.0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (d.aslFlags != kASL_FLAG_NONE))
 				// printf(">>>%g\n", d.triggerDelayTime);
 				// if ((isASL) || (d.aslFlags != kASL_FLAG_NONE)) d.triggerDelayTime = 0.0; //see dcm_qa_philips_asl
@@ -7238,8 +7243,15 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			// is2005140FSQwarned = true;
 			break;
 		case kMRImageGradientOrientationNumber:
-			if (d.manufacturer == kMANUFACTURER_PHILIPS)
-				gradientOrientationNumberPhilips = dcmStrInt(lLength, &buffer[lPos]);
+			if (d.manufacturer == kMANUFACTURER_PHILIPS) {
+				//n.b. historically VR of 2005,1413 is IS, but with R11 is can be SL
+				// this will cause havoc if Philips data is saved on a PACS with implicit vr
+				if (vr[0] == 'S' && vr[0] == 'S') {
+					gradientOrientationNumberPhilips = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+				} else {
+					gradientOrientationNumberPhilips = dcmStrInt(lLength, &buffer[lPos]);
+				}
+			}
 			break;
 		case kMRImageLabelType: // CS ??? LBL CTL
 			if ((d.manufacturer != kMANUFACTURER_PHILIPS) || (lLength < 2))
@@ -8120,7 +8132,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			}
 		} // verbose > 1
 		// see http://dicom.nema.org/medical/Dicom/2018d/output/chtml/part03/sect_C.8.24.3.3.html
-		// Philips puts spatial position as lower item than temporal position, the reverse is true for Bruker and Canon
 		int stackPositionItem = 0;
 		if (dimensionIndexPointerCounter > 0)
 			for (size_t i = 0; i < dimensionIndexPointerCounter; i++)
@@ -8154,17 +8165,17 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 						dcmDim[i].dimIdx[j] = tmp[maxVariableItem - j + 2];
 				}
 		}*/
-		if ((isKludgeIssue533) && (numDimensionIndexValues > 1))
-			printWarning("Guessing temporal order for Philips enhanced DICOM ASL (issue 532).\n");
-		if ((isKludgeIssue809) && (numDimensionIndexValues > 1))
-			printWarning("Guessing temporal order for Philips enhanced DICOM DWI and fMRI (issue 809).\n");
-			// sort dimensions
+		// Philips puts spatial position as lower item than temporal position, the reverse is true for Bruker and Canon
+		if ((isKludgeIssue809) && (numDimensionIndexValues > 1)) {
+			printWarning("Guessing temporal order for Philips enhanced DICOM ASL, DWI and fMRI (issue 533/809).\n");
+			//artificially insert stack position in first slot
+			// dimensionIndexPointer[0] = kInStackPositionNumber;
+			stackPositionItem = 0;
+		}
 		if (stackPositionItem < maxVariableItem)
 			qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdim);
 		else
 			qsort(dcmDim, numberOfFrames, sizeof(struct TDCMdim), compareTDCMdimRev);
-		// for (int i = 0; i < numberOfFrames; i++)
-		//	printf("i %d diskPos= %d dimIdx= %d %d %d %d TE= %g\n", i, dcmDim[i].diskPos, dcmDim[i].dimIdx[0], dcmDim[i].dimIdx[1], dcmDim[i].dimIdx[2], dcmDim[i].dimIdx[3], dti4D->TE[i]);
 		for (int i = 0; i < numberOfFrames; i++) {
 			dti4D->sliceOrder[i] = dcmDim[i].diskPos;
 			dti4D->intenScale[i] = dcmDim[i].intenScale;
@@ -8306,7 +8317,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	}
 	if (frameNumberInSeries >= 0) // issue837
 		d.imageNum = frameNumberInSeries;
-	// TODO533: alias Philips ASL PLD as frameDuration? isKludgeIssue533
+	// TODO533: alias Philips ASL PLD as frameDuration? isKludgeIssue809
 	// if ((d.manufacturer == kMANUFACTURER_PHILIPS) && ((!isTriggerSynced) || (!isProspectiveSynced)) ) //issue408
 	//	d.triggerDelayTime = 0.0; 		 //Philips ASL use "(0018,9037) CS [NONE]" but "(2001,1010) CS [TRIGGERED]", a situation not described in issue408
 	if (isSameFloat(MRImageDynamicScanBeginTime * 1000.0, d.triggerDelayTime)) // issue395
