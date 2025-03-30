@@ -4797,6 +4797,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	int multiBandFactor = 0;
 	int frequencyRows = 0;
 	int numberOfImagesInMosaic = 0;
+	int swVers = -1;
 	int encapsulatedDataFragments = 0;
 	int encapsulatedDataFragmentStart = 0; // position of first FFFE,E000 for compressed images
 	int encapsulatedDataImageStart = 0;	   // position of 7FE0,0010 for compressed images (where actual image start should be start of first fragment)
@@ -4932,45 +4933,30 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				sqDepth00189114 = -1; // triggered
 				//  d.aslFlags = kASL_FLAG_PHILIPS_LABEL; kASL_FLAG_PHILIPS_LABEL
 				//printf("issue809 %d %d %d\n", inStackPositionNumber, philMRImageDiffBValueNumber, gradientOrientationNumberPhilips);
-				if ((nDimIndxVal > 1) && (volumeNumber > 0) && (inStackPositionNumber > 0) && ((d.aslFlags == kASL_FLAG_PHILIPS_LABEL) || (d.aslFlags == kASL_FLAG_PHILIPS_CONTROL))) {
+				bool isKludge = (swVers > 10) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (inStackPositionNumber > 0);
+				if (isKludge) {
 					isKludgeIssue809 = true;
 					for (int i = 0; i < nDimIndxVal; i++)
 						d.dimensionIndexValues[i] = 0;
 					int phase = d.phaseNumber;
 					if (d.phaseNumber < 0)
-						phase = 0;													   // if not set: we are saving as UINT
-					d.dimensionIndexValues[0] = inStackPositionNumber;				   // dim[3] slice changes fastest
-					d.dimensionIndexValues[1] = phase;								   // dim[4] successive volumes are phase
-					d.dimensionIndexValues[2] = d.aslFlags == kASL_FLAG_PHILIPS_LABEL; // dim[5] Control/Label
-					d.dimensionIndexValues[3] = volumeNumber;						   // dim[6] Repeat changes slowest
-					nDimIndxVal = 4;												   // slice < phase < control/label < volume
-																					   // printf("slice %d phase %d control/label %d repeat %d\n", inStackPositionNumber, d.phaseNumber, d.aslFlags == kASL_FLAG_PHILIPS_LABEL, volumeNumber);
-				} else if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (volumeNumber > 0) && (gradientOrientationNumberPhilips > 0) && (inStackPositionNumber > 0)) {
-					isKludgeIssue809 = true;
-					for (int i = 0; i < nDimIndxVal; i++)
-						d.dimensionIndexValues[i] = 0;
-					d.dimensionIndexValues[0] = inStackPositionNumber;
-					d.dimensionIndexValues[1] = philMRImageDiffBValueNumber;
-					d.dimensionIndexValues[2] = gradientOrientationNumberPhilips;
-					// magnitude[0], real[1], imaginary[2] or phase[3]
+						phase = 0;
+					int aslFlag = d.aslFlags == kASL_FLAG_PHILIPS_LABEL;
 					int imageType = 0;
 					if (isReal) imageType = 1;
 					if (isImaginary) imageType = 2;
 					if (isPhase) imageType = 3;
-					d.dimensionIndexValues[3] = imageType;
-					nDimIndxVal = 4;
-				} else if ((d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (volumeNumber > 0) && (inStackPositionNumber > 0) ) {
-					isKludgeIssue809 = true;
-					for (int i = 0; i < nDimIndxVal; i++)
-						d.dimensionIndexValues[i] = 0;
-					int phase = d.phaseNumber;
-					if (d.phaseNumber < 0)
-						phase = 0;													   // if not set: we are saving as UINT
+					int bvalNum = philMRImageDiffBValueNumber > 0 ? philMRImageDiffBValueNumber : 0;
+					int gradNum = gradientOrientationNumberPhilips > 0 ? gradientOrientationNumberPhilips : 0;
+					int volume = volumeNumber > 0 ? volumeNumber : 0;
 					d.dimensionIndexValues[0] = inStackPositionNumber;				   // dim[3] slice changes fastest
-					d.dimensionIndexValues[1] = phase;								   // dim[4] successive volumes are phase
-					d.dimensionIndexValues[2] = 0; 									   // dim[5] Control/Label unused for fMRI
-					d.dimensionIndexValues[3] = volumeNumber;						   // dim[6] Repeat changes slowest
-					nDimIndxVal = 4;												   // slice < phase < control/label < volume
+					d.dimensionIndexValues[1] = phase;
+					d.dimensionIndexValues[2] = aslFlag;
+					d.dimensionIndexValues[3] = imageType;
+					d.dimensionIndexValues[4] = bvalNum;
+					d.dimensionIndexValues[5] = gradNum;
+					d.dimensionIndexValues[6] = volume;
+					nDimIndxVal = 7;
 				}
 				if ((volumeNumber == 1) && (acquisitionTimePhilips >= 0.0) && (inStackPositionNumber > 0)) {
 					d.CSA.sliceTiming[inStackPositionNumber - 1] = acquisitionTimePhilips;
@@ -5861,6 +5847,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kSoftwareVersions: {
 			dcmStr(lLength, &buffer[lPos], d.softwareVersions);
 			int slen = (int)strlen(d.softwareVersions);
+			swVers = dcmStrInt(lLength, &buffer[lPos]);
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA10") != NULL))
 				d.isXA10A = true;
 			if ((slen > 4) && (strstr(d.softwareVersions, "XA11") != NULL))
@@ -7246,7 +7233,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			if (d.manufacturer == kMANUFACTURER_PHILIPS) {
 				//n.b. historically VR of 2005,1413 is IS, but with R11 is can be SL
 				// this will cause havoc if Philips data is saved on a PACS with implicit vr
-				if (vr[0] == 'S' && vr[0] == 'S') {
+				if (vr[0] == 'S' && vr[1] == 'L') {
 					gradientOrientationNumberPhilips = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
 				} else {
 					gradientOrientationNumberPhilips = dcmStrInt(lLength, &buffer[lPos]);
@@ -7272,7 +7259,13 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		case kMRImageDiffBValueNumber:
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
 				break;
-			philMRImageDiffBValueNumber = dcmStrInt(lLength, &buffer[lPos]);
+			//n.b. historically VR of 2005,1412 is IS, but with R11 is can be SL
+			// this will cause havoc if Philips data is saved on a PACS with implicit vr
+			if (vr[0] == 'S' && vr[1] == 'L') {
+				philMRImageDiffBValueNumber = dcmInt(lLength, &buffer[lPos], d.isLittleEndian);
+			} else {
+				philMRImageDiffBValueNumber = dcmStrInt(lLength, &buffer[lPos]);
+			}
 			break;
 		case kMRImageDiffVolumeNumber:
 			if (d.manufacturer != kMANUFACTURER_PHILIPS)
@@ -8499,10 +8492,14 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	d.rawDataRunNumber = (d.rawDataRunNumber > gradientOrientationNumberPhilips) ? d.rawDataRunNumber : gradientOrientationNumberPhilips;
 	if ((d.rawDataRunNumber < 0) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (d.dimensionIndexValues[nDimIndxVal - 1] > 0))
 		d.rawDataRunNumber = d.dimensionIndexValues[nDimIndxVal - 1]; // Philips enhanced scans converted to classic with dcuncat
-	if (philMRImageDiffVolumeNumber > 0) {							  // use 2005,1596 for Philips DWI >= R5.6
+	if ((philMRImageDiffVolumeNumber > 0) && (swVers < 11)) {							  // use 2005,1596 for Philips DWI >= R5.6; issue809
 		d.rawDataRunNumber = philMRImageDiffVolumeNumber;
 		d.phaseNumber = 0;
 	}
+	/*if (gradientOrientationNumberPhilips >= 0) { //issue809
+		d.rawDataRunNumber  = gradientOrientationNumberPhilips;
+	}*/
+
 	// Phase encoding polarity
 	// next conditionals updated: make GE match Siemens
 	// it also rescues Siemens XA20 images without CSA header but with 0021,111C
