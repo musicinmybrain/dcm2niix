@@ -7115,7 +7115,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			break;
 		}
 		case kASLPulseTrainDuration: {
-			d.postLabelDelay = dcmInt(4, &buffer[lPos], d.isLittleEndian);
+			if (vr[0] == 'S' && vr[1] == 'H') { // issue919
+				d.postLabelDelay = dcmStrInt(lLength, &buffer[lPos]);
+			} else {
+				d.postLabelDelay = dcmInt(4, &buffer[lPos], d.isLittleEndian);
+			}
 			break;
 		}
 		case kDiffusionBValueXX: {
