@@ -4936,8 +4936,6 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				bool isKludge = (swVers > 10) && (d.manufacturer == kMANUFACTURER_PHILIPS) && (nDimIndxVal > 1) && (inStackPositionNumber > 0);
 				if (isKludge) {
 					isKludgeIssue809 = true;
-					for (int i = 0; i < nDimIndxVal; i++)
-						d.dimensionIndexValues[i] = 0;
 					int phase = d.phaseNumber;
 					if (d.phaseNumber < 0)
 						phase = 0;
@@ -4949,14 +4947,22 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 					int bvalNum = philMRImageDiffBValueNumber > 0 ? philMRImageDiffBValueNumber : 0;
 					int gradNum = gradientOrientationNumberPhilips > 0 ? gradientOrientationNumberPhilips : 0;
 					int volume = volumeNumber > 0 ? volumeNumber : 0;
+					int d2 = d.dimensionIndexValues[2];
+					int d3 = d.dimensionIndexValues[3];
+					if (d.aslFlags == kASL_FLAG_NONE) {
+						aslFlag = d2;
+					}
+					for (int i = 0; i < nDimIndxVal; i++)
+						d.dimensionIndexValues[i] = 0;
 					d.dimensionIndexValues[0] = inStackPositionNumber;				   // dim[3] slice changes fastest
 					d.dimensionIndexValues[1] = phase;
 					d.dimensionIndexValues[2] = aslFlag;
 					d.dimensionIndexValues[3] = imageType;
 					d.dimensionIndexValues[4] = bvalNum;
 					d.dimensionIndexValues[5] = gradNum;
-					d.dimensionIndexValues[6] = volume;
-					nDimIndxVal = 7;
+					d.dimensionIndexValues[6] = d3;
+					d.dimensionIndexValues[7] = volume;
+					nDimIndxVal = 8;
 				}
 				if ((volumeNumber == 1) && (acquisitionTimePhilips >= 0.0) && (inStackPositionNumber > 0)) {
 					d.CSA.sliceTiming[inStackPositionNumber - 1] = acquisitionTimePhilips;
