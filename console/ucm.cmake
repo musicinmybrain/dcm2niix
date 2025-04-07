@@ -10,12 +10,8 @@
 # The documentation can be found at the library's page:
 # https://github.com/onqtam/ucm
 
-# Support CMake >=2.8.12, but be compatible with policies up to 3.5 for newer CMake
-if(POLICY CMP0000)
-  cmake_minimum_required(VERSION 2.8.12...3.5)
-else()
-  cmake_minimum_required(VERSION 2.8.12)
-endif()
+cmake_minimum_required(VERSION 3.5)
+
 include(CMakeParseArguments)
 
 # optionally include cotire - the git submodule might not be inited (or the user might have already included it)
