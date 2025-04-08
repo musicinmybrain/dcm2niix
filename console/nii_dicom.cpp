@@ -3041,6 +3041,43 @@ unsigned char *nii_planar2rgb(unsigned char *bImg, struct nifti_1_header *hdr, i
 	return bImg;
 } // nii_planar2rgb()
 
+static inline uint8_t clamp255(int x) {
+    return (x < 0) ? 0 : (x > 255 ? 255 : x);
+}
+
+unsigned char *nii_ybr2rgb(unsigned char *bImg, struct nifti_1_header *hdr) {
+	// YBR->RGB: PhotometricInterpretation (0028,0004) YBR_FULL
+	// ITU-R BT.601 YCbCr → RGB (full-range) transform 
+	if (bImg == NULL)
+		return NULL;
+	if (hdr->datatype != DT_RGB24)
+		return bImg;
+	size_t dim3to7 = 1;
+	for (int i = 3; i < 8; i++)
+		if (hdr->dim[i] > 1)
+			dim3to7 = dim3to7 * hdr->dim[i];
+	size_t sliceBytes8 = hdr->dim[1] * hdr->dim[2];
+	size_t sliceBytes24 = sliceBytes8 * 3;
+	size_t sliceOffsetR = 0;
+	for (int sl = 0; sl < dim3to7; sl++) {					// for each 2D slice
+		size_t sliceOffsetG = sliceOffsetR + sliceBytes8;
+		size_t sliceOffsetB = sliceOffsetR + 2 * sliceBytes8;
+		for (int rgb = 0; rgb < sliceBytes8; rgb++) {
+			int Y = bImg[sliceOffsetR + rgb];
+			int Cb = bImg[sliceOffsetG + rgb];
+			int Cr = bImg[sliceOffsetB + rgb];
+			float r = Y + 1.402f   * (Cr - 128);
+			float g = Y - 0.344136f * (Cb - 128) - 0.714136f * (Cr - 128);
+			float b = Y + 1.772f   * (Cb - 128);
+			bImg[sliceOffsetR + rgb] = (uint8_t)clamp255((int)(r + 0.5f));
+			bImg[sliceOffsetG + rgb] = (uint8_t)clamp255((int)(g + 0.5f));
+			bImg[sliceOffsetB + rgb] = (uint8_t)clamp255((int)(b + 0.5f));
+		}
+		sliceOffsetR += sliceBytes24;
+	} // for each slice
+	return bImg;
+}
+
 unsigned char *nii_rgb2planar(unsigned char *bImg, struct nifti_1_header *hdr, int isPlanar) {
 	// DICOM data saved in triples RGBRGBRGB, Analyze RGB saved in planes RRR..RGGG..GBBBB..B
 	if (bImg == NULL)
@@ -3842,8 +3879,11 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 		return img;
 	if ((dcm.compressionScheme == kCompressNone) && (dcm.isLittleEndian != littleEndianPlatform()) && (hdr->bitpix > 8))
 		img = nii_byteswap(img, hdr);
-	if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype == DT_RGB24))
+	if ((dcm.compressionScheme == kCompressNone) && (hdr->datatype == DT_RGB24)) {
 		img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
+		if (dcm.isYBRfull)
+			img = nii_ybr2rgb(img, hdr);
+	}
 	dcm.isPlanarRGB = true;
 	if (dcm.CSA.mosaicSlices > 1) {
 		img = nii_demosaic(img, hdr, dcm.CSA.mosaicSlices, (dcm.manufacturer == kMANUFACTURER_UIH)); //, dcm.CSA.protocolSliceNumber1);
