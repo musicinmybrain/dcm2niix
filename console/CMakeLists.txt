@@ -160,6 +160,8 @@ if(USE_TURBOJPEG)
     add_definitions(-DmyTurboJPEG)
     target_include_directories(dcm2niix PRIVATE ${TURBOJPEG_INCLUDEDIR})
     target_link_libraries(dcm2niix ${TURBOJPEG_LIBRARIES})
+    # macOS kludge: pkg-config gives -lturbojpeg, but Homebrew installs libturbojpeg.dylib
+    # target_link_libraries(dcm2niix ${TURBOJPEG_LDFLAGS} turbojpeg)
 endif()
 
 if(USE_JASPER)

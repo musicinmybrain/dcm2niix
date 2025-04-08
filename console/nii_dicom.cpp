@@ -853,6 +853,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.accelFactOOP = 0.0;
 	d.compressedSensingFactor = 0.0;
 	d.isDeepLearning = false;
+	d.isYBRfull = false;
 	strcpy(d.deepLearningText, "");
 	// d.patientPositionNumPhilips = 0;
 	d.imageBytes = 0;
@@ -6333,6 +6334,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			dcmStr(lLength, &buffer[lPos], interp);
 			if (strcmp(interp, "PALETTE_COLOR") == 0)
 				isPaletteColor = true;
+			if (strcmp(interp, "YBR_FULL") == 0)
+				d.isYBRfull = true;
 			// printError("Photometric Interpretation 'PALETTE COLOR' not supported\n");
 			break;
 		}

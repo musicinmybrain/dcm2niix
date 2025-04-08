@@ -10159,6 +10159,8 @@ int nii_loadDirOneDirAtATime(char *path, struct TDCMopts *opts, int maxDepth, in
 		tinydir_next(&dir);
 	}
 	tinydir_close(&dir);
+	if (ret == kEXIT_NO_VALID_FILES_FOUND)
+		printError("Unable to find any DICOM images in %s (or subfolders %d deep)\n", path, opts->dirSearchDepth);
 	return ret;
 }
 
