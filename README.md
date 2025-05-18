@@ -207,6 +207,7 @@ The following tools exploit dcm2niix
   - [pydra-dcm2niix](https://github.com/nipype/pydra-dcm2niix) is a contains Pydra task interface for dcm2niix.
   - [qsm](https://github.com/CAIsr/qsm) Quantitative Susceptibility Mapping software.
   - [QSMxT](https://github.com/QSMxT/QSMxT) is an end-to-end software toolbox for Quantitative Susceptibility Mapping.
+  - [qunex](https://github.com/ULJ-Yale/qunex) Quantitative Neuroimaging Environment & ToolboX for data organization, preprocessing, and quality assurance neuroimaging modalities.
   - [reproin](https://github.com/ReproNim/reproin) is a setup for automatic generation of shareable, version-controlled BIDS datasets from MR scanners.
   - [Retina_OCT_dcm2nii](https://github.com/Choupan/Retina_OCT_dcm2nii) converts optical coherence tomography (OCT) data to NIfTI.
   - [sci-tran dcm2niix](https://github.com/scitran-apps/dcm2niix) Flywheel Gear (docker).

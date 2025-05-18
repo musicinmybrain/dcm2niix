@@ -50,7 +50,7 @@ extern "C" {
 #define kCPUsuf " " // unknown CPU
 #endif
 
-#define kDCMdate "v1.0.20250330"
+#define kDCMdate "v1.0.20250505"
 #define kDCMvers kDCMdate " " kJP2suf kLSsuf kCCsuf kCPUsuf
 
 static const int kMaxEPI3D = 1024; // maximum number of EPI images in Siemens Mosaic
@@ -78,6 +78,7 @@ static const int kMaxDTI4D = kMaxSlice2D; // issue460: maximum number of DTI dir
 #define kMANUFACTURER_MEDISO 9
 #define kMANUFACTURER_MRSOLUTIONS 10
 #define kMANUFACTURER_HYPERFINE 11
+#define  kMANUFACTURER_LEICA 12
 
 // note: note a complete modality list, e.g. XA,PX, etc
 #define kMODALITY_UNKNOWN 0
@@ -251,7 +252,7 @@ struct TDICOMdata {
 	int xyzDim[5];
 	uint32_t coilCrc, seriesUidCrc, instanceUidCrc;
 	int overlayStart[kMaxOverlay];
-	int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfTR, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, frequencyEncodingSteps, phaseEncodingStepsOutOfPlane, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, frameNum, imageNum, imageStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel, locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
+	int postLabelDelay, shimGradientX, shimGradientY, shimGradientZ, phaseNumber, spoiling, mtState, partialFourierDirection, interp3D, aslFlags, durationLabelPulseGE, epiVersionGE, internalepiVersionGE, maxEchoNumGE, rawDataRunNumber, numberOfTR, numberOfImagesInGridUIH, numberOfDiffusionT2GE, numberOfDiffusionDirectionGE, tensorFileGE, diffCyclingModeGE, phaseEncodingGE, protocolBlockStartGE, protocolBlockLengthGE, modality, dwellTime, effectiveEchoSpacingGE, phaseEncodingLines, phaseEncodingSteps, frequencyEncodingSteps, phaseEncodingStepsOutOfPlane, echoTrainLength, echoNum, sliceOrient, manufacturer, converted2NII, acquNum, frameNum, imageNum, imageStart, basicOffsetTableStart, imageBytes, bitsStored, bitsAllocated, samplesPerPixel, locationsInAcquisition, locationsInAcquisitionConflict, compressionScheme;
 	float compressedSensingFactor, xRayTubeCurrent, exposureTimeMs, numberOfExcitations, numberOfArms, numberOfPointsPerArm, groupDelay, decayFactor, scatterFraction, percentSampling, waterFatShift, numberOfAverages, patientSize, patientWeight, zSpacing, zThick, pixelBandwidth, SAR, phaseFieldofView, accelFactPE, accelFactOOP, flipAngle, fieldStrength, TE, TI, TR, intenScale, intenIntercept, intenScalePhilips, gantryTilt, lastScanLoc, angulation[4], velocityEncodeScaleGE;
 	float orient[7], patientPosition[4], patientPositionLast[4], xyzMM[4], stackOffcentre[4];
 	float rtia_timerGE, radionuclidePositronFraction, radionuclideTotalDose, radionuclideHalfLife, doseCalibrationFactor, injectedVolume, reconFilterSize; // PET ISOTOPE MODULE ATTRIBUTES (C.8-57)
@@ -264,7 +265,7 @@ struct TDICOMdata {
 	uint32_t dimensionIndexValues[MAX_NUMBER_OF_DIMENSIONS];
 	int deID_CS_n;
 	struct TCSAdata CSA;
-	bool isYBRfull, isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isXA, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude, isHasMixed, isFloat, isResampled, isLocalizer;
+	bool isYBRfull, isDeepLearning, isVariableFlipAngle, isQuadruped, isRealIsPhaseMapHz, isPrivateCreatorRemap, isHasOverlay, isEPI, isIR, isPartialFourier, isDiffusion, isVectorFromBMatrix, isRawDataStorage, isMicroscopy, isGrayscaleSoftcopyPresentationState, isStackableSeries, isCoilVaries, isNonParallelSlices, isBVecWorldCoordinates, isSegamiOasis, isXA10A, isXA, isScaleOrTEVaries, isScaleVariesEnh, isDerived, isXRay, isMultiEcho, isValid, is3DAcq, is2DAcq, isExplicitVR, isLittleEndian, isPlanarRGB, isSigned, isHasPhase, isHasImaginary, isHasReal, isHasMagnitude, isHasMixed, isFloat, isResampled, isLocalizer;
 	char phaseEncodingRC, patientSex;
 };
 

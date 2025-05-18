@@ -1373,6 +1373,9 @@ tse3d: T2*/
 	case kMANUFACTURER_HYPERFINE:
 		fprintf(fp, "\t\"Manufacturer\": \"Hyperfine\",\n");
 		break;
+	case kMANUFACTURER_LEICA:
+		fprintf(fp, "\t\"Manufacturer\": \"Leica\",\n");
+		break;
 	};
 	// if (d.epiVersionGE == 0)
 	//	fprintf(fp, "\t\"PulseSequenceName\": \"epi\",\n");
@@ -3908,6 +3911,8 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					strcat(outname, "GE");
 				else if (dcm.manufacturer == kMANUFACTURER_HYPERFINE)
 					strcat(outname, "Hyperfine");
+				else if (dcm.manufacturer == kMANUFACTURER_LEICA)
+					strcat(outname, "Leica");
 				else if (dcm.manufacturer == kMANUFACTURER_MEDISO)
 					strcat(outname, "Mediso");
 				else if (dcm.manufacturer == kMANUFACTURER_MRSOLUTIONS)
@@ -8077,7 +8082,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		dti4D->frameDuration[0] = -1;
 		dti4D->frameReferenceTime[0] = -1;
 	}
-	if (strlen(dcmList[indx0].patientOrient) < 3)
+	if ((strlen(dcmList[indx0].patientOrient) < 3) && (!dcmList[indx0].isMicroscopy))
 		printWarning("Patient Position (0018,5100) not specified (issue 642).\n");
 	if (dcmList[indx0].isQuadruped)
 		printWarning("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly (issue 642)\n");
@@ -9332,7 +9337,7 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		}
 	}
 	if ((strlen(d1.protocolName) < 1) && (strlen(d2.protocolName) < 1)) {
-		if (!warnings->nameEmpty)
+		if ((!warnings->nameEmpty) && (!d1.isMicroscopy))
 			printWarning("Empty protocol name(s) (0018,1030)\n");
 		warnings->nameEmpty = true;
 	} else if ((strcmp(d1.protocolName, d2.protocolName) != 0)) {
@@ -9398,8 +9403,8 @@ int singleDICOM(struct TDCMopts *opts, char *fname) {
 	dcmList[0].converted2NII = 1;
 	dcmList[0] = readDICOMx(nameList.str[0], &prefs, dti4D); // ignore compile warning - memory only freed on first of 2 passes
 	// dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
-        if (opts->isIgnoreSeriesInstanceUID)
-	        dcmList[0].seriesUidCrc = dcmList[0].seriesNum;
+	if (opts->isIgnoreSeriesInstanceUID)
+		dcmList[0].seriesUidCrc = dcmList[0].seriesNum;
 	fillTDCMsort(dcmSort[0], 0, dcmList[0]);
 	int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, dti4D);
 	freeNameList(nameList);
@@ -10605,18 +10610,16 @@ void dcmListDump(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmL
 		memset(mrifsStruct.dicomlst[i], 0, strlen(nameList->str[indx]) + 1);
 		memcpy(mrifsStruct.dicomlst[i], nameList->str[indx], strlen(nameList->str[indx]));
 
-                FILE *fp = stdout;
-                const char *imagelist = getenv("MGH_DCMUNPACK_IMAGELIST");
-                if (imagelist != NULL)
-                        fp = fopen(imagelist, "a");
-		
+		FILE *fp = stdout;
+		const char *imagelist = getenv("MGH_DCMUNPACK_IMAGELIST");
+		if (imagelist != NULL)
+				fp = fopen(imagelist, "a");
 		fprintf(fp, "%s %ld %s %s %f %f %f %f\\%f %c %f %s %s\n",
 				dcmList[indx].patientName, dcmList[indx].seriesNum, dcmList[indx].studyDate, dcmList[indx].studyTime,
 				dcmList[indx].TE, dcmList[indx].TR, dcmList[indx].flipAngle, dcmList[indx].xyzMM[1], dcmList[indx].xyzMM[2],
 				dcmList[indx].phaseEncodingRC, dcmList[indx].pixelBandwidth, nameList->str[indx], dcmList[indx].imageType);
-
-                if (fp != stdout)
-                        fclose(fp);
+		if (fp != stdout)
+			fclose(fp);
 	}
 }
 #endif

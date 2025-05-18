@@ -1,5 +1,5 @@
 # Regular use
-CFLAGS=-s -O3
+CFLAGS=-O3 -s -flto
 
 # Common files used for everything
 CFILES=main_console.cpp nii_foreign.cpp nii_dicom.cpp jpg_0XC3.cpp ujpeg.cpp nifti1_io_core.cpp nii_ortho.cpp nii_dicom_batch.cpp -o dcm2niix
@@ -42,7 +42,7 @@ ifneq ($(OS),Windows_NT)
  	ifeq "$(OS)" "Darwin"
 		#CFLAGS=-dead_strip -O3
 		#CFLAGS= -O3
-		CFLAGS=-O3 -sectcreate __TEXT __info_plist Info.plist
+		CFLAGS=-O3 -flto -sectcreate __TEXT __info_plist Info.plist
 		#Apple notarization requires a Info.plist
 		# For .app bundles, the Info.plist is a separate file, for executables it is appended as a section
 		#you can check that the Info.plist section has been inserted with either of these commands
@@ -55,6 +55,9 @@ ifneq ($(OS),Windows_NT)
 endif
 all:
 	g++ $(CFLAGS) -I. $(JSFLAGS) $(JFLAGS) $(LFLAGS) $(UFILES)
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		strip -x dcm2niix; \
+	fi
 
 sanitize:
 	g++ -O1 -g -fsanitize=address -fno-omit-frame-pointer $(LFLAGS) $(UFILES)
