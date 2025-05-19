@@ -893,7 +893,7 @@ struct TDICOMdata clear_dicom_data() {
 	d.frameNum = 0; //first shall be one
 	d.imageNum = 1;
 	d.imageStart = 0;
-	d.basicOffsetTableStart = 0;
+	d.offsetTableItems = 0;
 	d.is3DAcq = false;				  // e.g. MP-RAGE, SPACE, TFE
 	d.is2DAcq = false;				  //
 	d.isDerived = false;			  // 0008,0008 = DERIVED,CSAPARALLEL,POSDISP
@@ -3513,10 +3513,7 @@ unsigned char *nii_loadImgJPEG50(char *imgname, struct TDICOMdata dcm) {
 	}
 	// load compressed data
 	FILE *f = fopen(imgname, "rb");
-	//TODO size_t _jpegSize = dcm.imageBytes
-	fseek(f, 0, SEEK_END);
-	long unsigned int _jpegSize = (long unsigned int)ftell(f);
-	_jpegSize = _jpegSize - dcm.imageStart;
+	size_t _jpegSize = dcm.imageBytes;
 	if (_jpegSize < 8) {
 		printError("File too small\n");
 		fclose(f);
@@ -3844,105 +3841,16 @@ unsigned char *nii_loadImgJPEGLS(char *imgname, struct nifti_1_header hdr, struc
 }
 #endif
 
-uint32_t *load_BasicOffsetTable(const char *imgname, struct TDICOMdata dcm) {
-	int frames = dcm.xyzDim[3];
-	if (dcm.xyzDim[4] > 1)
-		frames *= dcm.xyzDim[4];
-	if ((frames < 1) || (dcm.basicOffsetTableStart <= 0))
-		return NULL;
-	size_t nbytes = frames * sizeof(uint32_t);
-	FILE *file = fopen(imgname, "rb");
-	if (!file) {
-		printError("Unable to open %s\n", imgname);
-		return NULL;
-	}
-	// Check file size
-	if (fseek(file, 0, SEEK_END) != 0) {
-		printError("Failed to seek to end of file: %s\n", imgname);
-		fclose(file);
-		return NULL;
-	}
-	long fileLen = ftell(file);
-	if (fileLen < 0 || fileLen < (dcm.basicOffsetTableStart + (long)nbytes)) {
-		printMessage("File not large enough to store BasicOffsetTable: %s\n", imgname);
-		fclose(file);
-		return NULL;
-	}
-	// Seek to BOT
-	if (fseek(file, (long)dcm.basicOffsetTableStart, SEEK_SET) != 0) {
-		printError("Failed to seek to BOT start in file: %s\n", imgname);
-		fclose(file);
-		return NULL;
-	}
-	// Allocate and read
-	uint32_t *offsets = (uint32_t *)malloc(nbytes);
-	if (offsets == NULL) {
-		printError("Memory allocation failed\n");
-		fclose(file);
-		return NULL;
-	}
-	size_t sz = fread(offsets, sizeof(uint32_t), frames, file);
-	fclose(file);
-	if (sz < (size_t)frames) {
-		printError("Only loaded %zu of %d BOT entries for %s\n", sz, frames, imgname);
-		free(offsets);
-		return NULL;
-	}
-	bool swap = (dcm.isLittleEndian != littleEndianPlatform());
-	if (swap) {
-		nifti_swap_4bytes(frames, &offsets[0]);
-	}
-	return offsets;
-}
-
-unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose, struct TDTI4D *dti4D) {
+unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose, struct TDTI4D *dti4D) {
 	// provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
-	if (headerDcm2Nii(dcm, hdr, true) == EXIT_FAILURE)
-		return NULL; // TOFU
+	// n.b. must ALWAYS be called from nii_loadImgXLCore()
 	unsigned char *img;
-	if ((dcm.basicOffsetTableStart > 0) && (dcm.compressionScheme != kCompress50)) {
-		printMessage("Software must be upgraded to support Basic Offset Tables with this compression method %d\n", dcm.compressionScheme);
-		return NULL;
-	}
 	if (dcm.compressionScheme == kCompress50) {
 #ifdef myDisableClassicJPEG
 		printMessage("Software not compiled to decompress classic JPEG DICOM images\n");
 		return NULL;
 #else
-		if (dcm.basicOffsetTableStart > 0) {
-			size_t imageStart = dcm.imageStart;
-			size_t finalImageBytes = dcm.imageBytes;
-			uint32_t *offsets = load_BasicOffsetTable(imgname, dcm);
-			int frames = dcm.xyzDim[3];
-			if (dcm.xyzDim[4] > 1)
-				frames *= dcm.xyzDim[4];
-			size_t bpp = hdr->bitpix / 8;
-			size_t sliceBytes = dcm.xyzDim[1] * dcm.xyzDim[2] * bpp;
-			img = (unsigned char *)malloc(sliceBytes * frames);
-			if (!img) {
-				printError("Memory allocation failed\n");
-				free(offsets);
-				return NULL;
-			}
-			for (int i = 0; i < frames; i++) {
-				dcm.imageStart = imageStart + offsets[i];
-				dcm.imageBytes = finalImageBytes;
-				if (i < (frames - 1))
-					dcm.imageBytes = offsets[i + 1] - offsets[i];
-				unsigned char *img2D = nii_loadImgJPEG50(imgname, dcm);
-				if (!img2D) {
-					printError("Failed to decode frame %d\n", i);
-					free(img);
-					free(offsets);
-					return NULL;
-				}
-				// Copy the 2D slice into the correct position in the 3D/4D image buffer
-				memcpy(img + i * sliceBytes, img2D, sliceBytes);
-				free(img2D);
-			}
-			free(offsets);
-		} else
-			img = nii_loadImgJPEG50(imgname, dcm);
+		img = nii_loadImgJPEG50(imgname, dcm);
 		if (hdr->datatype == DT_RGB24)						 // convert to planar
 			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
 #endif
@@ -3951,6 +3859,8 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 		img = nii_loadImgJPEGLS(imgname, *hdr, dcm);
 		if (hdr->datatype == DT_RGB24)						 // convert to planar
 			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
+		if (dcm.isYBRfull)
+			img = nii_ybr2rgb(img, hdr);
 #else
 		printMessage("Software not compiled to decompress JPEG-LS DICOM images\n");
 		return NULL;
@@ -3961,12 +3871,16 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 		img = nii_loadImgRLE(imgname, *hdr, dcm);
 		if (hdr->datatype == DT_RGB24)						 // convert to planar
 			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
-	} else if (dcm.compressionScheme == kCompressC3)
+	} else if (dcm.compressionScheme == kCompressC3) {
 		img = nii_loadImgJPEGC3(imgname, *hdr, dcm, isVerbose);
-	else
+		if (dcm.isYBRfull)
+			img = nii_ybr2rgb(img, hdr);
+	} else
 #ifndef myDisableOpenJPEG
 		if (((dcm.compressionScheme == kCompress50) || (dcm.compressionScheme == kCompressYes)) && (compressFlag != kCompressNone))
 		img = nii_loadImgCoreOpenJPEG(imgname, *hdr, dcm, compressFlag);
+		if (dcm.isYBRfull)
+			img = nii_ybr2rgb(img, hdr);
 	else
 #else
 #ifdef myEnableJasper
@@ -4007,6 +3921,54 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 		img = nii_iVaries(img, hdr, dti4D);
 	headerDcm2NiiSForm(dcm, dcm, hdr, false);
 	return img;
+} // nii_loadImgXLCore()
+
+unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct TDICOMdata dcm, bool iVaries, int compressFlag, int isVerbose, struct TDTI4D *dti4D) {
+	// provided with a filename (imgname) and DICOM header (dcm), creates NIfTI header (hdr) and img
+	if (headerDcm2Nii(dcm, hdr, true) == EXIT_FAILURE)
+		return NULL;
+	if (dcm.offsetTableItems <= 1) 
+		return nii_loadImgXLCore(imgname, hdr, dcm, iVaries, compressFlag, isVerbose, dti4D);
+	int frames = dcm.xyzDim[3];
+	if (dcm.xyzDim[4] > 1)
+		frames *= dcm.xyzDim[4];
+	if (frames != dcm.offsetTableItems)
+		printMessage("Number of frames %d does not match offset table %d\n", frames, dcm.offsetTableItems);
+		size_t bpp = hdr->bitpix / 8;
+		size_t sliceBytes2D = dcm.xyzDim[1] * dcm.xyzDim[2] * bpp;
+		if (sliceBytes2D == 0) {
+			printError("DICOM header does not make sense\n");
+			return NULL;
+		}
+		unsigned char *img  = (unsigned char *)malloc(sliceBytes2D * frames);
+		if (!img) return NULL;
+		struct nifti_1_header *hdr2D = (struct nifti_1_header *)malloc(sizeof(struct nifti_1_header));
+		if (!hdr2D) {
+			printError("Memory allocation failed for hdr2D\n");
+			free(img);
+			return NULL;
+		}
+		memcpy(hdr2D, hdr, sizeof(struct nifti_1_header));
+		for (int i = 3; i < 8; i++)
+			 hdr2D->dim[i] = 1;
+		int lastimageBytes = dcm.imageBytes;
+		for (int i = 0; i < frames; i++) {
+			dcm.imageStart = dti4D->offsetTable[i];
+			dcm.imageBytes = lastimageBytes;
+			if (i < (frames - 1))
+				dcm.imageBytes = dti4D->offsetTable[i+1] - dcm.imageStart;
+			unsigned char *img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, iVaries, compressFlag, isVerbose, dti4D);
+			if (!img2D) {
+				printError("Failed to decode frame %d\n", i);
+				free(img);
+				free(img2D);
+				return NULL;
+			}
+			// Copy the 2D slice into the correct position in the 3D/4D image buffer
+			memcpy(img + i * sliceBytes2D, img2D, sliceBytes2D);
+			free(img2D);
+		}
+		return img;
 } // nii_loadImgXL()
 
 int isSQ(uint32_t groupElement, bool isPhilips) { // Detect sequence VR ("SQ") for implicit tags
@@ -4409,6 +4371,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	dti4D->decayFactor[0] = -1;
 	dti4D->frameDuration[0] = -1;
 	dti4D->frameReferenceTime[0] = -1;
+	dti4D->offsetTable[0] = 0;
 	// dti4D->fragmentOffset[0] = -1;
 	dti4D->intenScale[0] = 0.0;
 	// Ensure dti4D fields are initialised, as in nii_readParRec()
@@ -5352,12 +5315,19 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			lPos = lPos + 4;
 			// https://dicom.nema.org/medical/dicom/current/output/chtml/part05/sect_8.2.html
 			// detect and skip  Basic Offset Table
-			bool  isBasicOffsetTable = (d.imageBytes < 1) && (lLength == 4 * numberOfFrames) && (d.basicOffsetTableStart <= 0);
-			if (isBasicOffsetTable) {
-				d.basicOffsetTableStart = (int)lPos + (int)lFileOffset;
+			bool  isBasicOffsetTable = (d.imageBytes < 1) && ((lLength == 4 * numberOfFrames) || (lLength <= 0));
+			if (lLength == 0xFFFFFFFF) {
+				// printf("Fragment has undefined length\n");
+				// to do: see pixelmed microscopy https://www.aliza-dicom-viewer.com/download/datasets
+				lLength = d.imageBytes;
+				d.imageStart = (int)lPos + (int)lFileOffset;
+				isBasicOffsetTable = true;
 			}
 			if (!isBasicOffsetTable) {
 				d.imageBytes = lLength;
+				if (d.offsetTableItems < kMaxSlice2D)
+					dti4D->offsetTable[d.offsetTableItems] = (int)lPos + (int)lFileOffset;
+				d.offsetTableItems ++;
 				if (d.imageBytes <= 0)
 					goto skipRemap;
 				if (d.imageBytes > 24) {
@@ -7963,16 +7933,11 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// printf("%d bval=%g bvec=%g %g %g<<<\n", d.CSA.numDti, d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
 	// printMessage("><>< DWI bxyz %g %g %g %g\n", d.CSA.dtiV[0], d.CSA.dtiV[1], d.CSA.dtiV[2], d.CSA.dtiV[3]);
 	if (encapsulatedDataFragmentStart > 0) {
-		if ((encapsulatedDataFragments < 0) || (encapsulatedDataFragments != numberOfFrames))
-			d.basicOffsetTableStart = 0;
-		if ((encapsulatedDataFragments > 1) && (encapsulatedDataFragments == numberOfFrames) && (d.basicOffsetTableStart > 0)) {
-			// read basicOffsetTableStart
-			d.imageStart = encapsulatedDataFragmentStart;
-		} else if ((encapsulatedDataFragments > 1) && (encapsulatedDataFragments == numberOfFrames) && (encapsulatedDataFragments < kMaxDTI4D)) {
+		if ((encapsulatedDataFragments > 1) && (encapsulatedDataFragments == numberOfFrames) && (encapsulatedDataFragments < kMaxDTI4D)) {
 			printWarning("Compressed image stored as %d fragments: if conversion fails decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
 			d.imageStart = encapsulatedDataFragmentStart;
 		} else if (encapsulatedDataFragments > 1) {
-			printError("Compressed image stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", encapsulatedDataFragments, fname);
+			printError("Compressed image with %d frames stored as %d fragments: decompress with gdcmconv, Osirix, dcmdjpeg or dcmjp2k %s\n", numberOfFrames, encapsulatedDataFragments, fname);
 		} else {
 			d.imageStart = encapsulatedDataFragmentStart;
 			// dti4D->fragmentOffset[0] = -1;
@@ -8695,6 +8660,10 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 	// printMessage("buffer usage %d %d %d\n",d.imageStart, lPos+lFileOffset, MaxBufferSz);
 	if ((d.bitsStored == 1) && (highBit != 0)) {
 		printWarning("1-bit binary with high bit = %d not supported (issue 572)\n", highBit);
+		d.isValid = false;
+	}
+	if (d.offsetTableItems >= kMaxSlice2D) {
+		printWarning("DICOM image fragments %d exceed capacity %d\n", d.offsetTableItems, kMaxSlice2D);
 		d.isValid = false;
 	}
 	if ((d.xyzDim[1] > SHRT_MAX) || (d.xyzDim[2] > SHRT_MAX) || (d.xyzDim[3] > SHRT_MAX) || (d.xyzDim[4] > SHRT_MAX)) {

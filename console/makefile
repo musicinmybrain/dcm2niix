@@ -66,6 +66,9 @@ sanitize:
 debug:
 	g++ -O0 $(LFLAGS) $(UFILES)
 
+turbo:
+	g++ -O0 $(LFLAGS) $(UFILES) -DmyTurboJPEG -I/opt/homebrew/include -L/opt/homebrew/lib -lturbojpeg
+
 jp2:
 	g++ $(CFLAGS) $(LFLAGS) $(CFILES) $(JFLAGS) -I/opt/homebrew/Cellar/openjpeg/2.5.3/include/openjpeg-2.5/ -L/opt/homebrew/Cellar/openjpeg/2.5.3/lib/ -lopenjp2
 
