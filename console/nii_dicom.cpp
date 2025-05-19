@@ -3850,7 +3850,7 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 		img = nii_loadImgJPEG50(imgname, dcm);
 		if (hdr->datatype == DT_RGB24)						 // convert to planar
 			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
-		// n.b. turboJPEG and nanoJPEG should BOTHs automatically convert YBR to RGB
+		// n.b. turboJPEG and nanoJPEG should both automatically convert YBR to RGB
 		// if (dcm.isYBRfull)
 		//   img = nii_ybr2rgb(img, hdr);
 #endif
