@@ -7975,7 +7975,7 @@ void oldSliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struc
 
 int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct nifti_1_header *hdr, int verbose, const char *filename, int nConvert, struct TDCMopts opts) {
 	int sliceDir = 0;
-	if (hdr->dim[3] < 2)
+	if ((hdr->dim[3] < 2) || (hdr->dim[3] > kMaxEPI3D))
 		return sliceDir;
 	// uint64_t indx0 = dcmSort[0].indx;
 	// uint64_t indx1 = dcmSort[1].indx;
@@ -8012,11 +8012,13 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 	// ensure slice times have variability
 	reverseSliceTiming(d0, verbose, hdr->dim[3]);
 	bool allSame = true;
-	for (int i = 0; i < hdr->dim[3]; i++)
-		if (!isSameFloatGE(d0->CSA.sliceTiming[i], d0->CSA.sliceTiming[0]))
-			allSame = false;
-	if (allSame)
-		d0->CSA.sliceTiming[0] = -1.0;
+	if (d0->CSA.sliceTiming[0] >= 0.0) {
+		for (int i = 0; i < hdr->dim[3]; i++)
+			if (!isSameFloatGE(d0->CSA.sliceTiming[i], d0->CSA.sliceTiming[0]))
+				allSame = false;
+		if (allSame)
+			d0->CSA.sliceTiming[0] = -1.0;
+	}
 	return sliceDir;
 } // sliceTiming()
 

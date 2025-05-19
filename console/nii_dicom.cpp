@@ -3028,41 +3028,38 @@ unsigned char *nii_loadImgCore(char *imgname, struct nifti_1_header hdr, int bit
 } // nii_loadImgCore()
 
 unsigned char *nii_planar2rgb(unsigned char *bImg, struct nifti_1_header *hdr, int isPlanar) {
-	// DICOM data saved in triples RGBRGBRGB, NIfTI RGB saved in planes RRR..RGGG..GBBBB..B
-	if (bImg == NULL)
-		return NULL;
-	if (hdr->datatype != DT_RGB24)
+	if (bImg == NULL || hdr->datatype != DT_RGB24 || isPlanar == 0)
 		return bImg;
-	if (isPlanar == 0)
-		return bImg;
-	int dim3to7 = 1;
+	int nx = hdr->dim[1];
+	int ny = hdr->dim[2];
+	int nSlice = 1;
 	for (int i = 3; i < 8; i++)
 		if (hdr->dim[i] > 1)
-			dim3to7 = dim3to7 * hdr->dim[i];
-	int sliceBytes8 = hdr->dim[1] * hdr->dim[2];
-	int sliceBytes24 = sliceBytes8 * 3;
-	unsigned char *slice24 = (unsigned char *)malloc(sizeof(unsigned char) * (sliceBytes24));
-	int sliceOffsetRGB = 0;
-	int sliceOffsetR = 0;
-	int sliceOffsetG = sliceOffsetR + sliceBytes8;
-	int sliceOffsetB = sliceOffsetR + 2 * sliceBytes8;
-	// printMessage("planar->rgb %dx%dx%d\n", hdr->dim[1],hdr->dim[2], dim3to7);
-	int i = 0;
-	for (int sl = 0; sl < dim3to7; sl++) { // for each 2D slice
-		memcpy(slice24, &bImg[sliceOffsetRGB], sliceBytes24);
-		for (int rgb = 0; rgb < sliceBytes8; rgb++) {
-			bImg[i++] = slice24[sliceOffsetR + rgb];
-			bImg[i++] = slice24[sliceOffsetG + rgb];
-			bImg[i++] = slice24[sliceOffsetB + rgb];
+			nSlice *= hdr->dim[i];
+	size_t nPix = nx * ny;
+	size_t sliceSizePlanar = nPix * 3; // planar size: RRR...RGGG...GBBB...
+	// Allocate temporary buffer to hold the RGB interleaved data for one slice
+	unsigned char *tempRGB = (unsigned char *)malloc(nPix * 3);
+	if (tempRGB == NULL)
+		return NULL;
+	for (int sl = 0; sl < nSlice; sl++) {
+		size_t base = sl * sliceSizePlanar;
+		unsigned char *r = &bImg[base + 0 * nPix];
+		unsigned char *g = &bImg[base + 1 * nPix];
+		unsigned char *b = &bImg[base + 2 * nPix];
+		for (size_t i = 0; i < nPix; i++) {
+			tempRGB[i * 3 + 0] = r[i];
+			tempRGB[i * 3 + 1] = g[i];
+			tempRGB[i * 3 + 2] = b[i];
 		}
-		sliceOffsetRGB += sliceBytes24;
-	} // for each slice
-	free(slice24);
+		memcpy(&bImg[base], tempRGB, nPix * 3); // copy interleaved RGB back
+	}
+	free(tempRGB);
 	return bImg;
-} // nii_planar2rgb()
+}
 
 static inline uint8_t clamp255(int x) {
-    return (x < 0) ? 0 : (x > 255 ? 255 : x);
+	return (x < 0) ? 0 : (x > 255 ? 255 : x);
 }
 
 unsigned char *nii_ybr2rgb(unsigned char *bImg, struct nifti_1_header *hdr) {
@@ -3570,7 +3567,7 @@ unsigned char *nii_loadImgJPEG50(char *imgname, struct TDICOMdata dcm) {
 	// decode
 	njInit();
 	if (njDecode(buf, size)) {
-		printError("Unable to decode JPEG image.\n");
+		printError("Unable to decode baseline JPEG image offset %d bytes %d (hint compile dcm2niix with turboJPEG).\n", dcm.imageStart, dcm.imageBytes);
 		return NULL;
 	}
 	free(buf);
@@ -3853,6 +3850,9 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 		img = nii_loadImgJPEG50(imgname, dcm);
 		if (hdr->datatype == DT_RGB24)						 // convert to planar
 			img = nii_rgb2planar(img, hdr, dcm.isPlanarRGB); // do this BEFORE Y-Flip, or RGB order can be flipped
+		// n.b. turboJPEG and nanoJPEG should BOTHs automatically convert YBR to RGB
+		// if (dcm.isYBRfull)
+		//   img = nii_ybr2rgb(img, hdr);
 #endif
 	} else if (dcm.compressionScheme == kCompressJPEGLS) {
 #if defined(myEnableJPEGLS) || defined(myEnableJPEGLS1)
@@ -3877,10 +3877,11 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 			img = nii_ybr2rgb(img, hdr);
 	} else
 #ifndef myDisableOpenJPEG
-		if (((dcm.compressionScheme == kCompress50) || (dcm.compressionScheme == kCompressYes)) && (compressFlag != kCompressNone))
-		img = nii_loadImgCoreOpenJPEG(imgname, *hdr, dcm, compressFlag);
-		if (dcm.isYBRfull)
-			img = nii_ybr2rgb(img, hdr);
+		if (((dcm.compressionScheme == kCompress50) || (dcm.compressionScheme == kCompressYes)) && (compressFlag != kCompressNone)) {
+			img = nii_loadImgCoreOpenJPEG(imgname, *hdr, dcm, compressFlag);
+			if (dcm.isYBRfull)
+				img = nii_ybr2rgb(img, hdr);
+		}
 	else
 #else
 #ifdef myEnableJasper
@@ -3890,7 +3891,7 @@ unsigned char *nii_loadImgXLCore(char *imgname, struct nifti_1_header *hdr, stru
 #endif
 #endif
 		if (dcm.compressionScheme == kCompressYes) {
-		printMessage("Software not set up to decompress DICOM\n");
+		printMessage("%d Unable to decompress DICOM transfer syntax '%s'\n", compressFlag, dcm.transferSyntax);
 		return NULL;
 	} else
 		img = nii_loadImgCore(imgname, *hdr, dcm.bitsAllocated, dcm.imageStart);
@@ -3933,42 +3934,42 @@ unsigned char *nii_loadImgXL(char *imgname, struct nifti_1_header *hdr, struct T
 	if (dcm.xyzDim[4] > 1)
 		frames *= dcm.xyzDim[4];
 	if (frames != dcm.offsetTableItems)
-		printMessage("Number of frames %d does not match offset table %d\n", frames, dcm.offsetTableItems);
-		size_t bpp = hdr->bitpix / 8;
-		size_t sliceBytes2D = dcm.xyzDim[1] * dcm.xyzDim[2] * bpp;
-		if (sliceBytes2D == 0) {
-			printError("DICOM header does not make sense\n");
-			return NULL;
-		}
-		unsigned char *img  = (unsigned char *)malloc(sliceBytes2D * frames);
-		if (!img) return NULL;
-		struct nifti_1_header *hdr2D = (struct nifti_1_header *)malloc(sizeof(struct nifti_1_header));
-		if (!hdr2D) {
-			printError("Memory allocation failed for hdr2D\n");
+	printMessage("Number of frames %d does not match offset table %d\n", frames, dcm.offsetTableItems);
+	size_t bpp = hdr->bitpix / 8;
+	size_t sliceBytes2D = dcm.xyzDim[1] * dcm.xyzDim[2] * bpp;
+	if (sliceBytes2D == 0) {
+		printError("DICOM header does not make sense\n");
+		return NULL;
+	}
+	unsigned char *img  = (unsigned char *)malloc(sliceBytes2D * frames);
+	if (!img) return NULL;
+	struct nifti_1_header *hdr2D = (struct nifti_1_header *)malloc(sizeof(struct nifti_1_header));
+	if (!hdr2D) {
+		printError("Memory allocation failed for hdr2D\n");
+		free(img);
+		return NULL;
+	}
+	memcpy(hdr2D, hdr, sizeof(struct nifti_1_header));
+	for (int i = 3; i < 8; i++)
+		 hdr2D->dim[i] = 1;
+	int lastimageBytes = dcm.imageBytes;
+	for (int i = 0; i < frames; i++) {
+		dcm.imageStart = dti4D->offsetTable[i];
+		dcm.imageBytes = lastimageBytes;
+		if (i < (frames - 1))
+			dcm.imageBytes = dti4D->offsetTable[i+1] - dcm.imageStart;
+		unsigned char *img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, iVaries, compressFlag, isVerbose, dti4D);
+		if (!img2D) {
+			printError("Failed to decode frame %d/%d offset: %d bytes: %d format: %s\n", (i+1), frames, dcm.imageStart, dcm.imageBytes, dcm.transferSyntax);
 			free(img);
+			free(img2D);
 			return NULL;
 		}
-		memcpy(hdr2D, hdr, sizeof(struct nifti_1_header));
-		for (int i = 3; i < 8; i++)
-			 hdr2D->dim[i] = 1;
-		int lastimageBytes = dcm.imageBytes;
-		for (int i = 0; i < frames; i++) {
-			dcm.imageStart = dti4D->offsetTable[i];
-			dcm.imageBytes = lastimageBytes;
-			if (i < (frames - 1))
-				dcm.imageBytes = dti4D->offsetTable[i+1] - dcm.imageStart;
-			unsigned char *img2D = nii_loadImgXLCore(imgname, hdr2D, dcm, iVaries, compressFlag, isVerbose, dti4D);
-			if (!img2D) {
-				printError("Failed to decode frame %d\n", i);
-				free(img);
-				free(img2D);
-				return NULL;
-			}
-			// Copy the 2D slice into the correct position in the 3D/4D image buffer
-			memcpy(img + i * sliceBytes2D, img2D, sliceBytes2D);
-			free(img2D);
-		}
-		return img;
+		// Copy the 2D slice into the correct position in the 3D/4D image buffer
+		memcpy(img + i * sliceBytes2D, img2D, sliceBytes2D);
+		free(img2D);
+	}
+	return img;
 } // nii_loadImgXL()
 
 int isSQ(uint32_t groupElement, bool isPhilips) { // Detect sequence VR ("SQ") for implicit tags
@@ -5515,9 +5516,7 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			char transferSyntax[kDICOMStr];
 			strcpy(transferSyntax, "");
 			dcmStr(lLength, &buffer[lPos], transferSyntax);
-#ifdef USING_DCM2NIIXFSWRAPPER
 			strcpy(d.transferSyntax, transferSyntax);
-#endif
 			if (strcmp(transferSyntax, "1.2.840.10008.1.2.1") == 0)
 				; // default isExplicitVR=true; //d.isLittleEndian=true
 			else if (strcmp(transferSyntax, "1.2.840.10008.1.2.4.50") == 0) {
@@ -6459,9 +6458,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 			dcmStr(lLength, &buffer[lPos], interp);
 			if (strcmp(interp, "PALETTE_COLOR") == 0)
 				isPaletteColor = true;
-			if (strcmp(interp, "YBR_FULL") == 0)
+			if (strncmp(interp, "YBR_FULL", 8) == 0)
 				d.isYBRfull = true;
-			// printError("Photometric Interpretation 'PALETTE COLOR' not supported\n");
+			// printf("interp '%s' %d\n", interp, d.isYBRfull);
 			break;
 		}
 		case kPlanarRGB:
@@ -8036,8 +8035,15 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		printMessage("Please check voxel size\n");
 		d.xyzMM[1] = d.xyzMM[2];
 	}
-	if ((d.xyzMM[3] < FLT_EPSILON)) {
-		printMessage("Unable to determine slice thickness: please check voxel size\n");
+	if (d.isMicroscopy && (d.xyzMM[3] < FLT_EPSILON)) {
+		// for multiplanar display, make stack of all slices have same size as largest in plane field of view
+		float fov1 = d.xyzMM[1] * d.xyzDim[1];
+		float fov2 = d.xyzMM[2] * d.xyzDim[2];
+		d.xyzMM[3] = fmaxf(fov1, fov2) / d.xyzDim[3];
+	}
+	if (d.xyzMM[3] < FLT_EPSILON) {
+		if (d.xyzDim[3] > 1)
+			printMessage("Unable to determine slice thickness: please check voxel size\n");
 		d.xyzMM[3] = 1.0;
 	}
 	// printMessage("Patient Position\t%g\t%g\t%g\tThick\t%g\n",d.patientPosition[1],d.patientPosition[2],d.patientPosition[3], d.xyzMM[3]);
