@@ -62,9 +62,6 @@
 #ifdef myEnableJasper
 ERROR : YOU CAN NOT COMPILE WITH myEnableJasper AND NOT myDisableOpenJPEG OPTIONS SET SIMULTANEOUSLY
 #endif
-#ifndef SHRT_MAX
-#define SHRT_MAX 32767
-#endif
 
 		unsigned char *
 		imagetoimg(opj_image_t *image) {
@@ -8672,6 +8669,9 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 		printWarning("DICOM image fragments %d exceed capacity %d\n", d.offsetTableItems, kMaxSlice2D);
 		d.isValid = false;
 	}
+#ifndef SHRT_MAX
+#define SHRT_MAX 32767
+#endif
 	if ((d.xyzDim[1] > SHRT_MAX) || (d.xyzDim[2] > SHRT_MAX) || (d.xyzDim[3] > SHRT_MAX) || (d.xyzDim[4] > SHRT_MAX)) {
 		printWarning("DICOM too large for NIfTI1 %d×%d×%d×%d\n", d.xyzDim[1], d.xyzDim[2], d.xyzDim[3], d.xyzDim[4]);
 		d.isValid = false;
