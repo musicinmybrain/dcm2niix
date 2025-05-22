@@ -21,7 +21,6 @@ Options:
   -o OUT --out=OUT              If given, save the output to this filename.
                                 (Overrides the implicit destination of -e.)
 """
-from __future__ import print_function
 try:
     import json_tricks as json
 except ImportError:

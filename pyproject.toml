@@ -16,7 +16,7 @@ write_to_template = "__version__ = '{version}'\n"
 name = "dcm2niix"
 description = "DCM2NIIX Python package"
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.7"
 keywords = ["research", "jpeg", "dicom", "neuroscience", "mri", "neuroimaging", "nifti", "dcm", "nii", "nitrc", "bids", "dcm2niix", "mricrogl"]
 license = {file = "license.txt"}
 authors = [
