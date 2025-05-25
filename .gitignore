@@ -25,3 +25,5 @@ dcm2niix*.wasm
 
 *.tar.gz
 openjpeg-2.5.3/
+v2.5.3.tar.gz*
+niivue-dcm2niix-*.tgz
