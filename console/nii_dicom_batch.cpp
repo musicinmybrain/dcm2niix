@@ -1373,6 +1373,9 @@ tse3d: T2*/
 	case kMANUFACTURER_HYPERFINE:
 		fprintf(fp, "\t\"Manufacturer\": \"Hyperfine\",\n");
 		break;
+	case kMANUFACTURER_LEICA:
+		fprintf(fp, "\t\"Manufacturer\": \"Leica\",\n");
+		break;
 	};
 	// if (d.epiVersionGE == 0)
 	//	fprintf(fp, "\t\"PulseSequenceName\": \"epi\",\n");
@@ -2650,6 +2653,18 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 		char sep = '\t';
 		if (opts.isCreateBIDS)
 			sep = ' ';
+
+#ifdef USING_DCM2NIIXFSWRAPPER
+		mrifsStruct.numDti = numVol;
+		mrifsStruct.tdti = (TDTI *)malloc(numVol * sizeof(TDTI));
+		for (int i = 0; i < numVol; i++)
+		{
+			mrifsStruct.tdti[i].V[0] = 0;
+			mrifsStruct.tdti[i].V[1] = 0;
+			mrifsStruct.tdti[i].V[2] = 0;
+			mrifsStruct.tdti[i].V[3] = 0;
+		}
+#else
 		// save bval
 		char txtname[2048] = {""};
 		strcpy(txtname, pathoutname);
@@ -2669,6 +2684,7 @@ int *nii_saveDTI(char pathoutname[], int nConvert, struct TDCMsort dcmSort[], st
 			fprintf(fp, "\n");
 		}
 		fclose(fp);
+#endif  // USING_DCM2NIIXFSWRAPPER
 #endif
 	}
 	if (numDti < 1)
@@ -3858,7 +3874,17 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 				isSeriesReported = true;
 			}
 			if (f == 'T') {
-				snprintf(newstr, PATH_MAX, "%0.0f", dcm.dateTime);
+				//issue912
+				int hh = (int)(dcm.dateTime / 10000);
+				int mm = (int)(fmod(dcm.dateTime, 10000) / 100);
+				double ss_raw = fmod(dcm.dateTime, 100);  // Extract seconds (with fraction)
+				// Round seconds
+				int ss = (int)round(ss_raw);
+				// Ensure seconds are within 0-59 range
+				if (ss == 60) {
+					ss = 59;
+				}
+				snprintf(newstr, PATH_MAX, "%02d%02d%02d", hh, mm, ss);
 				strcat(outname, newstr);
 			}
 			if (f == 'U') {
@@ -3885,6 +3911,8 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					strcat(outname, "GE");
 				else if (dcm.manufacturer == kMANUFACTURER_HYPERFINE)
 					strcat(outname, "Hyperfine");
+				else if (dcm.manufacturer == kMANUFACTURER_LEICA)
+					strcat(outname, "Leica");
 				else if (dcm.manufacturer == kMANUFACTURER_MEDISO)
 					strcat(outname, "Mediso");
 				else if (dcm.manufacturer == kMANUFACTURER_MRSOLUTIONS)
@@ -4326,12 +4354,13 @@ int pigz_File(char *fname, struct TDCMopts opts, size_t imgsz) {
 	strcat(command, opts.pigzname);
 	if ((opts.gzLevel > 0) && (opts.gzLevel < 12)) {
 		char newstr[256];
-		snprintf(newstr, 256, "\"%s -n -f -%d \"", blockSize, opts.gzLevel);
+		snprintf(newstr, sizeof(newstr), "\"%.*s --no-time -n -f -%d \"", 200, blockSize, opts.gzLevel);
+		// snprintf(newstr, 256, "\"%s -n -f -%d \"", blockSize, opts.gzLevel);
 		// 749 snprintf(newstr, 256, "\"%s -n -f -%d '", blockSize, opts.gzLevel);
 		strcat(command, newstr);
 	} else {
 		char newstr[256];
-		snprintf(newstr, 256, "\"%s -n \"", blockSize);
+		snprintf(newstr, 256, "\"%s --no-time -n \"", blockSize);
 		// 749 snprintf(newstr, 256, "\"%s -n '", blockSize);
 		strcat(command, newstr);
 	}
@@ -5712,11 +5741,11 @@ int nii_saveNII(char *niiFilename, struct nifti_1_header hdr, unsigned char *im,
 		strcat(command, opts.pigzname);
 		if ((opts.gzLevel > 0) && (opts.gzLevel < 12)) {
 			char newstr[256];
-			snprintf(newstr, 256, "\" -n -f -%d > \"", opts.gzLevel);
+			snprintf(newstr, 256, "\" --no-time -n -f -%d > \"", opts.gzLevel);
 			// 749 snprintf(newstr, 256, "\" -n -f -%d > '", opts.gzLevel);
 			strcat(command, newstr);
 		} else
-			strcat(command, "\" -n -f > \""); // current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
+			strcat(command, "\" --no-time -n -f > \""); // current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
 		// 749 strcat(command, "\" -n -f > '"); //current versions of pigz (2.3) built on Windows can hang if the filename is included, presumably because it is not finding the path characters ':\'
 		strcat(command, fname);
 		// issue749 single not double quotes so $ character does not cause issues
@@ -6734,11 +6763,13 @@ void sliceTimingXA(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct 
 	//  Ignore first volume: For an example of erroneous first volume timing, see series 10 (Functional_w_SMS=3) https://github.com/rordenlab/dcm2niix/issues/240
 	//  an alternative would be to use 0018,9074 - this would need to be converted from DT to Secs, and is scrambled if de-identifies data see enhanced de-identified series 26 from issue 236
 	uint64_t indx0 = dcmSort[0].indx; // first volume
-	if ((!dcmList[indx0].isXA10A) || (hdr->dim[3] < 1) || (hdr->dim[4] < 1))
+	if ((!dcmList[indx0].isXA) || (hdr->dim[3] < 1) || (hdr->dim[4] < 2))
 		return;
 	if (hdr->dim[3] > kMaxEPI3D) {
 		printWarning("Unable to set Siemens XA sliceTiming due to excessive slices per volume (%d).\n", hdr->dim[3]);
 		return;
+	} else {
+		printWarning("4D Siemens XA images should be exported as enhanced not classic DICOM. Slice times and other properties may be inaccurate.\n");
 	}
 	if ((nConvert == (hdr->dim[3] * hdr->dim[4])) && (hdr->dim[3] < (kMaxEPI3D - 1)) && (hdr->dim[3] > 1)) {
 		// issue875 use 2nd volume
@@ -7944,7 +7975,7 @@ void oldSliceTimingGE(struct TDCMsort *dcmSort,struct TDICOMdata *dcmList, struc
 
 int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct nifti_1_header *hdr, int verbose, const char *filename, int nConvert, struct TDCMopts opts) {
 	int sliceDir = 0;
-	if (hdr->dim[3] < 2)
+	if ((hdr->dim[3] < 2) || (hdr->dim[3] > kMaxEPI3D))
 		return sliceDir;
 	// uint64_t indx0 = dcmSort[0].indx;
 	// uint64_t indx1 = dcmSort[1].indx;
@@ -7981,11 +8012,13 @@ int sliceTimingCore(struct TDCMsort *dcmSort, struct TDICOMdata *dcmList, struct
 	// ensure slice times have variability
 	reverseSliceTiming(d0, verbose, hdr->dim[3]);
 	bool allSame = true;
-	for (int i = 0; i < hdr->dim[3]; i++)
-		if (!isSameFloatGE(d0->CSA.sliceTiming[i], d0->CSA.sliceTiming[0]))
-			allSame = false;
-	if (allSame)
-		d0->CSA.sliceTiming[0] = -1.0;
+	if (d0->CSA.sliceTiming[0] >= 0.0) {
+		for (int i = 0; i < hdr->dim[3]; i++)
+			if (!isSameFloatGE(d0->CSA.sliceTiming[i], d0->CSA.sliceTiming[0]))
+				allSame = false;
+		if (allSame)
+			d0->CSA.sliceTiming[0] = -1.0;
+	}
 	return sliceDir;
 } // sliceTiming()
 
@@ -8051,7 +8084,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 		dti4D->frameDuration[0] = -1;
 		dti4D->frameReferenceTime[0] = -1;
 	}
-	if (strlen(dcmList[indx0].patientOrient) < 3)
+	if ((strlen(dcmList[indx0].patientOrient) < 3) && (!dcmList[indx0].isMicroscopy))
 		printWarning("Patient Position (0018,5100) not specified (issue 642).\n");
 	if (dcmList[indx0].isQuadruped)
 		printWarning("Anatomical Orientation Type (0010,2210) is QUADRUPED: rotate coordinates accordingly (issue 642)\n");
@@ -8553,6 +8586,7 @@ int saveDcm2NiiCore(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata d
 			return EXIT_SUCCESS;
 	}
 #else
+	// opts.numSeries equals to 1
 	double seriesNum = (double)dcmList[dcmSort[0].indx].seriesUidCrc;
 	if (!isSameDouble(opts.seriesNumber[0], seriesNum))
 		return EXIT_SUCCESS;
@@ -9305,7 +9339,7 @@ bool isSameSet(struct TDICOMdata d1, struct TDICOMdata d2, struct TDCMopts *opts
 		}
 	}
 	if ((strlen(d1.protocolName) < 1) && (strlen(d2.protocolName) < 1)) {
-		if (!warnings->nameEmpty)
+		if ((!warnings->nameEmpty) && (!d1.isMicroscopy))
 			printWarning("Empty protocol name(s) (0018,1030)\n");
 		warnings->nameEmpty = true;
 	} else if ((strcmp(d1.protocolName, d2.protocolName) != 0)) {
@@ -9371,6 +9405,8 @@ int singleDICOM(struct TDCMopts *opts, char *fname) {
 	dcmList[0].converted2NII = 1;
 	dcmList[0] = readDICOMx(nameList.str[0], &prefs, dti4D); // ignore compile warning - memory only freed on first of 2 passes
 	// dcmList[0] = readDICOMv(nameList.str[0], opts->isVerbose, opts->compressFlag, dti4D); //ignore compile warning - memory only freed on first of 2 passes
+	if (opts->isIgnoreSeriesInstanceUID)
+		dcmList[0].seriesUidCrc = dcmList[0].seriesNum;
 	fillTDCMsort(dcmSort[0], 0, dcmList[0]);
 	int ret = saveDcm2Nii(1, dcmSort, dcmList, &nameList, *opts, dti4D);
 	freeNameList(nameList);
@@ -10130,6 +10166,8 @@ int nii_loadDirOneDirAtATime(char *path, struct TDCMopts *opts, int maxDepth, in
 		tinydir_next(&dir);
 	}
 	tinydir_close(&dir);
+	if (ret == kEXIT_NO_VALID_FILES_FOUND)
+		printError("Unable to find any DICOM images in %s (or subfolders %d deep)\n", path, opts->dirSearchDepth);
 	return ret;
 }
 
@@ -10324,12 +10362,12 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 	}
 	if (is_exe(opts->pigzname))
 		return;
-#ifdef myDisableZLib
-	printMessage("Compression requires %s in the same folder as the executable\n", opts->pigzname);
-#else // myUseZLib
-	if (opts->isVerbose > 0)
-		printMessage("Compression will be faster with %s in the same folder as the executable\n", opts->pigzname);
-#endif
+	#ifdef myDisableZLib
+		printMessage("Compression requires %s in the same folder as the executable\n", opts->pigzname);
+	#else // myUseZLib
+		if (opts->isVerbose > 0)
+			printMessage("Compression will be faster with %s in the same folder as the executable\n", opts->pigzname);
+	#endif
 	strcpy(opts->pigzname, "");
 	return;
 #else // if windows else linux
@@ -10340,11 +10378,10 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 		"pigz_mricron",
 		"pigz_afni",
 	};
-#define n_nam (sizeof(names) / sizeof(const char *))
+	#define n_nam (sizeof(names) / sizeof(const char *))
 	for (int n = 0; n < (int)n_nam; n++) {
 		if (findpathof(str, names[n])) {
 			strcpy(opts->pigzname, str);
-			// printMessage("Found pigz: %s\n", str);
 			return;
 		}
 	}
@@ -10352,8 +10389,9 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 	const char *pths[] = {
 		"/usr/local/bin/",
 		"/usr/bin/",
+		"/opt/homebrew/bin/",
 	};
-#define n_pth (sizeof(pths) / sizeof(const char *))
+	#define n_pth (sizeof(pths) / sizeof(const char *))
 	char exepth[PATH_MAX];
 	strcpy(exepth, argv[0]);
 	dropFilenameFromPath(exepth); //, opts.pigzname);
@@ -10363,7 +10401,7 @@ void readFindPigz(struct TDCMopts *opts, const char *argv[]) {
 		strcat(exepth, appendChar);
 	// see if pigz in any path
 	for (int n = 0; n < (int)n_nam; n++) {
-		// printf ("%d: %s\n", i, names[n]);
+		// printf ("%d: %s\n", n, names[n]);
 		for (int p = 0; p < (int)n_pth; p++) {
 			strcpy(str, pths[p]);
 			strcat(str, names[n]);
@@ -10418,7 +10456,7 @@ void setDefaultOpts(struct TDCMopts *opts, const char *argv[]) { // either "setD
 	// printMessage("%d %s\n",opts->compressFlag, opts->compressname);
 	strcpy(opts->outdir, "");
 	strcpy(opts->indir, "");
-	strcpy(opts->pigzname, "");
+	// strcpy(opts->pigzname, ""); // do this BEFORE readFindPigz()
 	strcpy(opts->optsname, "");
 	strcpy(opts->indirParent, "");
 	strcpy(opts->imageComments, "");
@@ -10577,11 +10615,13 @@ void dcmListDump(int nConvert, struct TDCMsort dcmSort[], struct TDICOMdata dcmL
 		FILE *fp = stdout;
 		const char *imagelist = getenv("MGH_DCMUNPACK_IMAGELIST");
 		if (imagelist != NULL)
-			fp = fopen(imagelist, "a");
+				fp = fopen(imagelist, "a");
 		fprintf(fp, "%s %ld %s %s %f %f %f %f\\%f %c %f %s %s\n",
 				dcmList[indx].patientName, dcmList[indx].seriesNum, dcmList[indx].studyDate, dcmList[indx].studyTime,
 				dcmList[indx].TE, dcmList[indx].TR, dcmList[indx].flipAngle, dcmList[indx].xyzMM[1], dcmList[indx].xyzMM[2],
 				dcmList[indx].phaseEncodingRC, dcmList[indx].pixelBandwidth, nameList->str[indx], dcmList[indx].imageType);
+		if (fp != stdout)
+			fclose(fp);
 	}
 }
 #endif

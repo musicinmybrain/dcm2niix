@@ -147,8 +147,9 @@ ExternalProject_Add(console
     CMAKE_ARGS
         -Wno-dev
         --no-warn-unused-cli
-        ${EXTERNAL_PROJECT_BUILD_TYPE_CMAKE_ARGS}
-        ${OSX_ARCHITECTURES}
+        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+        -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
+        -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
         # Install directories
         -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_BINARY_DIR}
         # Compiler settings

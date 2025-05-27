@@ -16,5 +16,14 @@ __pycache__/
 
 dist
 node_modules
-dcm2niix.js
-dcm2niix.wasm
+dcm2niix*.js
+dcm2niix*.wasm
+
+# pixi environments
+.pixi
+*.egg-info
+
+*.tar.gz
+openjpeg-2.5.3/
+v2.5.3.tar.gz*
+niivue-dcm2niix-*.tgz
