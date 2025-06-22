@@ -6042,6 +6042,56 @@ void adjustOriginForNegativeTilt(struct nifti_1_header *hdr, float shiftPxY) {
 	}
 }
 
+void deshear_sform(struct nifti_1_header *hdr) {
+// Remove residual shear from the sform affine matrix by converting it
+// to a quaternion representation (which cannot encode shear) and back.
+// Updates both qform and sform fields in the NIfTI header accordingly.
+	if (!hdr) return;
+	// Load current sform matrix
+	mat44 Q44;
+	LOAD_MAT44(Q44,
+						 hdr->srow_x[0], hdr->srow_x[1], hdr->srow_x[2], hdr->srow_x[3],
+						 hdr->srow_y[0], hdr->srow_y[1], hdr->srow_y[2], hdr->srow_y[3],
+						 hdr->srow_z[0], hdr->srow_z[1], hdr->srow_z[2], hdr->srow_z[3]);
+
+	// Convert sform matrix to quaternion — discards shear
+	float dx, dy, dz;
+	nifti_mat44_to_quatern(Q44,
+			&hdr->quatern_b, &hdr->quatern_c, &hdr->quatern_d,
+			&hdr->qoffset_x, &hdr->qoffset_y, &hdr->qoffset_z,
+			&dx, &dy, &dz, &hdr->pixdim[0]);
+
+	hdr->pixdim[1] = dx;
+	hdr->pixdim[2] = dy;
+	hdr->pixdim[3] = dz;
+
+	// Reconstruct affine matrix from quaternion
+	mat44 mat = nifti_quatern_to_mat44(
+			hdr->quatern_b, hdr->quatern_c, hdr->quatern_d,
+			hdr->qoffset_x, hdr->qoffset_y, hdr->qoffset_z,
+			dx, dy, dz, hdr->pixdim[0]);
+
+	// Store reconstructed matrix back into srow_x/y/z
+	hdr->srow_x[0] = mat.m[0][0];
+	hdr->srow_x[1] = mat.m[0][1];
+	hdr->srow_x[2] = mat.m[0][2];
+	hdr->srow_x[3] = mat.m[0][3];
+
+	hdr->srow_y[0] = mat.m[1][0];
+	hdr->srow_y[1] = mat.m[1][1];
+	hdr->srow_y[2] = mat.m[1][2];
+	hdr->srow_y[3] = mat.m[1][3];
+
+	hdr->srow_z[0] = mat.m[2][0];
+	hdr->srow_z[1] = mat.m[2][1];
+	hdr->srow_z[2] = mat.m[2][2];
+	hdr->srow_z[3] = mat.m[2][3];
+
+	// Set codes to indicate both sform and qform are valid and matched
+	hdr->qform_code = NIFTI_XFORM_SCANNER_ANAT;
+	hdr->sform_code = NIFTI_XFORM_SCANNER_ANAT;
+} // deshear_sform()
+
 unsigned char *nii_saveNII3DtiltFloat32(char *niiFilename, struct nifti_1_header *hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, float *sliceMMarray, float gantryTiltDeg, int manufacturer) {
 	// correct for gantry tilt - http://www.mathworks.com/matlabcentral/fileexchange/24458-dicom-gantry-tilt-correction
 	if (opts.isOnlyBIDS)
@@ -6145,6 +6195,7 @@ unsigned char *nii_saveNII3DtiltFloat32(char *niiFilename, struct nifti_1_header
 	char niiFilenameTilt[2048] = {""};
 	strcat(niiFilenameTilt, niiFilename);
 	strcat(niiFilenameTilt, "_Tilt");
+	deshear_sform(hdr);
 	nii_saveNII3D(niiFilenameTilt, *hdr, imOut, opts, d);
 	return imOut;
 } // nii_saveNII3DtiltFloat32()
@@ -6255,6 +6306,7 @@ unsigned char *nii_saveNII3Dtilt(char *niiFilename, struct nifti_1_header *hdr, 
 	char niiFilenameTilt[2048] = {""};
 	strcat(niiFilenameTilt, niiFilename);
 	strcat(niiFilenameTilt, "_Tilt");
+	deshear_sform(hdr);
 	nii_saveNII3D(niiFilenameTilt, *hdr, imOut, opts, d);
 	return imOut;
 } // nii_saveNII3Dtilt()
@@ -6272,7 +6324,8 @@ int nii_saveNII3Deq(char *niiFilename, struct nifti_1_header hdr, unsigned char 
 		return EXIT_FAILURE;
 	}
 	float mn = sliceMMarray[1] - sliceMMarray[0];
-	for (int i = 1; i < hdr.dim[3]; i++) {
+	int inSlices = hdr.dim[3];
+	for (int i = 1; i < inSlices; i++) {
 		float dx = sliceMMarray[i] - sliceMMarray[i - 1];
 		if ((dx < mn) && (!isSameFloat(dx, 0.0))) // <- allow slice direction to reverse
 			mn = sliceMMarray[i] - sliceMMarray[i - 1];
@@ -6280,122 +6333,92 @@ int nii_saveNII3Deq(char *niiFilename, struct nifti_1_header hdr, unsigned char 
 	if (mn <= 0.0f) {
 		printMessage("Unable to equalize slice distances: slice order not consistently ascending:\n");
 		printMessage("dx=[0");
-		for (int i = 1; i < hdr.dim[3]; i++)
+		for (int i = 1; i < inSlices; i++)
 			printMessage(" %g", sliceMMarray[i - 1]);
 		printMessage("]\n");
 		printMessage(" Recompiling with '-DmyInstanceNumberOrderIsNotSpatial' might help.\n");
 		return EXIT_FAILURE;
 	}
-	int slices = hdr.dim[3];
-	slices = (int)ceil((sliceMMarray[slices - 1] - 0.5 * (sliceMMarray[slices - 1] - sliceMMarray[slices - 2])) / mn); //-0.5: fence post
-	if (slices > (hdr.dim[3] * 2)) {
-		slices = 2 * hdr.dim[3];
-		mn = (sliceMMarray[hdr.dim[3] - 1]) / (slices - 1);
-	}
-	// printMessage("-->%g mn slices %d orig %d\n", mn, slices, hdr.dim[3]);
-	if (slices < 3)
+	int outSlices = (int)ceil(sliceMMarray[inSlices - 1] / mn) + 1;
+	if (outSlices > 2 * inSlices)
+		outSlices = 2 * inSlices;
+	if (outSlices < 3)
 		return EXIT_FAILURE;
+	mn = sliceMMarray[inSlices - 1] / (outSlices - 1);
+	float *in32 = (float *)im;
+	short *in16 = (short *)im;
+	uint8_t *in8 = (uint8_t *)im;
+	int bytesPerVoxel = 2;
+	if (hdr.datatype == DT_FLOAT32)
+		bytesPerVoxel = 4;
+	else if (hdr.datatype == DT_RGB24) {
+		bytesPerVoxel = 1;
+		nVox2D *= 3;
+	}
+	uint8_t *out8 = (uint8_t *)malloc(nVox2D * outSlices * bytesPerVoxel);
+	float *out32 = (float *)out8;
+	short *out16 = (short *)out8;
+	for (int s = 0; s < outSlices; s++) {
+		float out_mm = s * mn;
+		// Find the closest two input slices
+		int lowIdx = 0;
+		while (lowIdx < inSlices - 2 && sliceMMarray[lowIdx + 1] < out_mm)
+			lowIdx++;
+		int hiIdx = lowIdx + 1;
+		// Clamp to endpoints
+		if (out_mm <= sliceMMarray[0]) {
+			lowIdx = hiIdx = 0;
+		} else if (out_mm >= sliceMMarray[inSlices - 1]) {
+			lowIdx = hiIdx = inSlices - 1;
+		}
+		float lowWt = 1.0;
+		float hiWt = 0.0;
+		if (lowIdx != hiIdx) {
+			float d = sliceMMarray[hiIdx] - sliceMMarray[lowIdx];
+			float frac = (out_mm - sliceMMarray[lowIdx]) / d;
+			lowWt = 1.0f - frac;
+			hiWt = frac;
+		}
+		if (opts.isVerbose > 0)
+			printf("out %d @ %.3f mm: %.1f%% slice %d, %.1f%% slice %d\n", s, out_mm, lowWt * 100.0f, lowIdx, hiWt * 100.0f, hiIdx);
+		int lowVox = lowIdx * nVox2D;
+		int hiVox = hiIdx * nVox2D;
+		int outVox = s * nVox2D;
+		if (hdr.datatype == DT_FLOAT32) {
+			for (int v = 0; v < nVox2D; v++)
+				out32[outVox + v] =  (in32[lowVox + v] * lowWt) + (in32[hiVox + v] * hiWt);
+		} else if (hdr.datatype == DT_RGB24) {
+			for (int v = 0; v < nVox2D; v++)
+				out8[outVox + v] = round(((float)in8[lowVox + v] * lowWt) + (float)in8[hiVox + v] * hiWt);
+		} else {
+			for (int v = 0; v < nVox2D; v++)
+				out16[outVox + v] = round(((float)in16[lowVox + v] * lowWt) + (float)in16[hiVox + v] * hiWt);
+		}
+	}
 	struct nifti_1_header hdrX = hdr;
-	hdrX.dim[3] = slices;
+	hdrX.dim[3] = outSlices;
 	hdrX.pixdim[3] = mn;
-	if ((hdr.pixdim[3] != 0.0) && (hdr.pixdim[3] != hdrX.pixdim[3])) {
-		float Scale = hdrX.pixdim[3] / hdr.pixdim[3];
-		// to do: do I change srow_z or srow_x[2], srow_y[2], srow_z[2],
-		hdrX.srow_z[0] = hdr.srow_z[0] * Scale;
-		hdrX.srow_z[1] = hdr.srow_z[1] * Scale;
-		hdrX.srow_z[2] = hdr.srow_z[2] * Scale;
+	// Compute magnitude of original srow_z vector
+	float orig_len = sqrt(
+			hdr.srow_z[0]*hdr.srow_z[0] +
+			hdr.srow_z[1]*hdr.srow_z[1] +
+			hdr.srow_z[2]*hdr.srow_z[2]);
+	if (opts.isVerbose > 0)  
+		printf("old sform %g pixdim[3] old %g new %g\n", orig_len, hdr.pixdim[3], mn);
+	// Avoid division by zero
+	if (orig_len > 0.0f) {
+			float scale = mn / orig_len; // new spacing over original spacing
+			hdrX.srow_z[0] = hdr.srow_z[0] * scale;
+			hdrX.srow_z[1] = hdr.srow_z[1] * scale;
+			hdrX.srow_z[2] = hdr.srow_z[2] * scale;
 	}
-	unsigned char *imX;
-	if (hdr.datatype == DT_FLOAT32) {
-		float *im32 = (float *)im;
-		imX = (unsigned char *)malloc((nVox2D * slices) * 4); // sizeof(float)
-		float *imX32 = (float *)imX;
-		for (int s = 0; s < slices; s++) {
-			float sliceXmm = s * mn;	// distance from first slice
-			int sliceXi = (s * nVox2D); // offset for this slice
-			int sHi = 0;
-			while ((sHi < (hdr.dim[3] - 1)) && (sliceMMarray[sHi] < sliceXmm))
-				sHi += 1;
-			int sLo = sHi - 1;
-			if (sLo < 0)
-				sLo = 0;
-			float mmHi = sliceMMarray[sHi];
-			float mmLo = sliceMMarray[sLo];
-			sLo = sLo * nVox2D;
-			sHi = sHi * nVox2D;
-			if ((mmHi == mmLo) || (sliceXmm > mmHi)) { // select only from upper slice TPX
-				// for (int v=0; v < nVox2D; v++)
-				//  imX16[sliceXi+v] = im16[sHi+v];
-				memcpy(&imX32[sliceXi], &im32[sHi], nVox2D * sizeof(float)); // memcpy( dest, src, bytes)
-			} else {
-				float fracHi = (sliceXmm - mmLo) / (mmHi - mmLo);
-				float fracLo = 1.0 - fracHi;
-				// weight between two slices
-				for (int v = 0; v < nVox2D; v++)
-					imX32[sliceXi + v] = round(((float)im32[sLo + v] * fracLo) + (float)im32[sHi + v] * fracHi);
-			}
-		}
-	} else if (hdr.datatype == DT_INT16) {
-		short *im16 = (short *)im;
-		imX = (unsigned char *)malloc((nVox2D * slices) * 2); // sizeof( short) );
-		short *imX16 = (short *)imX;
-		for (int s = 0; s < slices; s++) {
-			float sliceXmm = s * mn;	// distance from first slice
-			int sliceXi = (s * nVox2D); // offset for this slice
-			int sHi = 0;
-			while ((sHi < (hdr.dim[3] - 1)) && (sliceMMarray[sHi] < sliceXmm))
-				sHi += 1;
-			int sLo = sHi - 1;
-			if (sLo < 0)
-				sLo = 0;
-			float mmHi = sliceMMarray[sHi];
-			float mmLo = sliceMMarray[sLo];
-			sLo = sLo * nVox2D;
-			sHi = sHi * nVox2D;
-			if ((mmHi == mmLo) || (sliceXmm > mmHi)) { // select only from upper slice TPX
-				// for (int v=0; v < nVox2D; v++)
-				//  imX16[sliceXi+v] = im16[sHi+v];
-				memcpy(&imX16[sliceXi], &im16[sHi], nVox2D * sizeof(unsigned short)); // memcpy( dest, src, bytes)
-			} else {
-				float fracHi = (sliceXmm - mmLo) / (mmHi - mmLo);
-				float fracLo = 1.0 - fracHi;
-				// weight between two slices
-				for (int v = 0; v < nVox2D; v++)
-					imX16[sliceXi + v] = round(((float)im16[sLo + v] * fracLo) + (float)im16[sHi + v] * fracHi);
-			}
-		}
-	} else {
-		if (hdr.datatype == DT_RGB24)
-			nVox2D = nVox2D * 3;
-		imX = (unsigned char *)malloc((nVox2D * slices) * 2); // sizeof( short) );
-		for (int s = 0; s < slices; s++) {
-			float sliceXmm = s * mn;	// distance from first slice
-			int sliceXi = (s * nVox2D); // offset for this slice
-			int sHi = 0;
-			while ((sHi < (hdr.dim[3] - 1)) && (sliceMMarray[sHi] < sliceXmm))
-				sHi += 1;
-			int sLo = sHi - 1;
-			if (sLo < 0)
-				sLo = 0;
-			float mmHi = sliceMMarray[sHi];
-			float mmLo = sliceMMarray[sLo];
-			sLo = sLo * nVox2D;
-			sHi = sHi * nVox2D;
-			if ((mmHi == mmLo) || (sliceXmm > mmHi)) {	 // select only from upper slice TPX
-				memcpy(&imX[sliceXi], &im[sHi], nVox2D); // memcpy( dest, src, bytes)
-			} else {
-				float fracHi = (sliceXmm - mmLo) / (mmHi - mmLo);
-				float fracLo = 1.0 - fracHi; // weight between two slices
-				for (int v = 0; v < nVox2D; v++)
-					imX[sliceXi + v] = round(((float)im[sLo + v] * fracLo) + (float)im[sHi + v] * fracHi);
-			}
-		}
-	}
+	// Remove rounding errors that seem like shear to ITK
+	deshear_sform(&hdrX);
 	char niiFilenameEq[2048] = {""};
 	strcat(niiFilenameEq, niiFilename);
 	strcat(niiFilenameEq, "_Eq");
-	nii_saveNII3D(niiFilenameEq, hdrX, imX, opts, d);
-	free(imX);
+	nii_saveNII3D(niiFilenameEq, hdrX, out8, opts, d);
+	free(out8);
 	return EXIT_SUCCESS;
 } // nii_saveNII3Deq()
 
