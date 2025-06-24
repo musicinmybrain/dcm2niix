@@ -5743,6 +5743,8 @@ struct TDICOMdata readDICOMx(char *fname, struct TDCMprefs *prefs, struct TDTI4D
 				d.modality = kMODALITY_PT;
 			if ((buffer[lPos] == 'U') && (toupper(buffer[lPos + 1]) == 'S'))
 				d.modality = kMODALITY_US;
+			if ((buffer[lPos] == 'S') && (toupper(buffer[lPos + 1]) == 'E'))
+				d.modality = kMODALITY_SEG;
 			break;
 		case kManufacturer:
 			if (d.manufacturer == kMANUFACTURER_UNKNOWN)

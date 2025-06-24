@@ -94,6 +94,7 @@ static const int kMaxDTI4D = kMaxSlice2D; // issue460: maximum number of DTI dir
 #define kMODALITY_MR 3
 #define kMODALITY_PT 4
 #define kMODALITY_US 5
+#define kMODALITY_SEG 6
 
 // PartialFourierDirection 0018,9036
 #define kPARTIAL_FOURIER_DIRECTION_UNKNOWN 0

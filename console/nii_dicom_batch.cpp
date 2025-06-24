@@ -1288,6 +1288,9 @@ void nii_SaveBIDSX(char pathoutname[], struct TDICOMdata d, struct TDCMopts opts
 	case kMODALITY_US:
 		fprintf(fp, "\t\"Modality\": \"US\",\n");
 		break;
+	case kMODALITY_SEG:
+		fprintf(fp, "\t\"Modality\": \"SEG\",\n");
+		break;
 	};
 	// attempt to determine BIDS sequence type
 	/*(0018,0024) SequenceName
@@ -2437,7 +2440,7 @@ tse3d: T2*/
 	} // if (!d.is3DAcq), e.g. only for 2D issue849
 	// Slice Timing UIH or GE >>>>
 	// in theory, we should also report XA10 slice times here, but see series 24 of https://github.com/rordenlab/dcm2niix/issues/236
-	if ((d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (h->dim[3] > 1) && (d.CSA.sliceTiming[1] >= 0.0) && (d.CSA.sliceTiming[0] >= 0.0)) {
+	if ((d.modality != kMODALITY_SEG) && (d.modality != kMODALITY_CT) && (d.modality != kMODALITY_PT) && (!d.is3DAcq) && (h->dim[3] > 1) && (d.CSA.sliceTiming[1] >= 0.0) && (d.CSA.sliceTiming[0] >= 0.0)) {
 		fprintf(fp, "\t\"SliceTiming\": [\n");
 		for (int i = 0; i < h->dim[3]; i++) {
 			if (i != 0)
@@ -6042,12 +6045,63 @@ void adjustOriginForNegativeTilt(struct nifti_1_header *hdr, float shiftPxY) {
 	}
 }
 
+// Compute the angle (in degrees) between two 3D vectors
+static float angle_between(float a[3], float b[3]) {
+    float dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    float norm_a = sqrtf(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+    float norm_b = sqrtf(b[0]*b[0] + b[1]*b[1] + b[2]*b[2]);
+    if (norm_a == 0.0f || norm_b == 0.0f)
+        return 0.0f;  // degenerate axis
+    float cos_angle = dot / (norm_a * norm_b);
+    if (cos_angle < -1.0f) cos_angle = -1.0f;
+    if (cos_angle >  1.0f) cos_angle =  1.0f;
+    return acosf(cos_angle) * (180.0f / M_PI);
+}
+
+float max_shear_degrees(const struct nifti_1_header *hdr) {
+	if (!hdr) return 0.0f;
+		// Extract 3x3 linear part of the sform matrix
+	float A[3][3] = {
+		{ hdr->srow_x[0], hdr->srow_x[1], hdr->srow_x[2] }, // row 0
+		{ hdr->srow_y[0], hdr->srow_y[1], hdr->srow_y[2] }, // row 1
+		{ hdr->srow_z[0], hdr->srow_z[1], hdr->srow_z[2] }  // row 2
+	};
+	// Normalize axes
+	float axes[3][3];
+	for (int i = 0; i < 3; i++) {
+			float len = sqrtf(A[0][i]*A[0][i] + A[1][i]*A[1][i] + A[2][i]*A[2][i]);
+			if (len == 0.0f) len = 1.0f; // prevent divide-by-zero
+			axes[0][i] = A[0][i] / len;
+			axes[1][i] = A[1][i] / len;
+			axes[2][i] = A[2][i] / len;
+	}
+	// Compute angle deviations from 90° between each pair of axes
+	float max_dev = 0.0f;
+	for (int i = 0; i < 2; i++) {
+			for (int j = i+1; j < 3; j++) {
+					float a[3] = { axes[0][i], axes[1][i], axes[2][i] };
+					float b[3] = { axes[0][j], axes[1][j], axes[2][j] };
+					float angle = angle_between(a, b);
+					float deviation = fabsf(angle - 90.0f);
+					if (deviation > max_dev)
+							max_dev = deviation;
+			}
+	}
+	return max_dev;
+}
+
+
 void deshear_sform(struct nifti_1_header *hdr) {
 // Remove residual shear from the sform affine matrix by converting it
 // to a quaternion representation (which cannot encode shear) and back.
 // Updates both qform and sform fields in the NIfTI header accordingly.
 	if (!hdr) return;
 	// Load current sform matrix
+	float shear = max_shear_degrees(hdr);
+	if (isSameFloatGE (shear, 0.0)) {
+		return;
+	}
+	printWarning("Correcting %g degree shear\n", shear);
 	mat44 Q44;
 	LOAD_MAT44(Q44,
 						 hdr->srow_x[0], hdr->srow_x[1], hdr->srow_x[2], hdr->srow_x[3],
@@ -6266,6 +6320,7 @@ unsigned char *nii_saveNII3Dtilt(char *niiFilename, struct nifti_1_header *hdr, 
 	for (int v = 0; v < (nVox2D * hdrIn.dim[3]); v++)
 		imOut16[v] = pixelPaddingValue;
 	// copy skewed voxels
+	int isSeg = d.modality == kMODALITY_SEG;
 	for (int s = 0; s < hdrIn.dim[3]; s++) { // for each slice
 		float sliceMM = s * hdrIn.pixdim[3];
 		if (sliceMMarray != NULL)
@@ -6289,7 +6344,7 @@ unsigned char *nii_saveNII3Dtilt(char *niiFilename, struct nifti_1_header *hdr, 
 				for (int c = 0; c < hdrIn.dim[1]; c++) {	  // for each row
 					short valLo = imIn16[rLo + c];
 					short valHi = imIn16[rHi + c];
-					if (hasPixelPaddingValue && (valLo == pixelPaddingValue || valHi == pixelPaddingValue)) {
+					if ((isSeg) || (hasPixelPaddingValue && (valLo == pixelPaddingValue || valHi == pixelPaddingValue))) {
 						// https://github.com/rordenlab/dcm2niix/issues/262 - Use nearest neighbor interpolation
 						// when at least one of the values is padding.
 						imOut16[rOut + c] = fracHi >= 0.5 ? valHi : valLo;
@@ -6310,6 +6365,42 @@ unsigned char *nii_saveNII3Dtilt(char *niiFilename, struct nifti_1_header *hdr, 
 	nii_saveNII3D(niiFilenameTilt, *hdr, imOut, opts, d);
 	return imOut;
 } // nii_saveNII3Dtilt()
+
+// problem: changing pixdim[3] will introduce a shear in the presence of rotations.
+// solution: convert to quaternion which can not preserve shear, then rebuild matrix
+void set_slice_spacing_preserve_orientation(struct nifti_1_header* hdr, float dzNew) {
+	if (!hdr || dzNew <= 0.0f)
+			return;
+	// Load original sform matrix
+	mat44 Q44;
+	LOAD_MAT44(Q44,
+						 hdr->srow_x[0], hdr->srow_x[1], hdr->srow_x[2], hdr->srow_x[3],
+						 hdr->srow_y[0], hdr->srow_y[1], hdr->srow_y[2], hdr->srow_y[3],
+						 hdr->srow_z[0], hdr->srow_z[1], hdr->srow_z[2], hdr->srow_z[3]);
+	// Convert to quaternion (removes shear)
+	float dx, dy, dz;
+	nifti_mat44_to_quatern(Q44,
+			&hdr->quatern_b, &hdr->quatern_c, &hdr->quatern_d,
+			&hdr->qoffset_x, &hdr->qoffset_y, &hdr->qoffset_z,
+			&dx, &dy, &dz, &hdr->pixdim[0]);
+	// Update voxel dimensions
+	hdr->pixdim[1] = dx;
+	hdr->pixdim[2] = dy;
+	hdr->pixdim[3] = dzNew;
+	// Rebuild affine matrix from quaternion with new spacing
+	mat44 mat = nifti_quatern_to_mat44(
+			hdr->quatern_b, hdr->quatern_c, hdr->quatern_d,
+			hdr->qoffset_x, hdr->qoffset_y, hdr->qoffset_z,
+			hdr->pixdim[1], hdr->pixdim[2], hdr->pixdim[3], hdr->pixdim[0]);
+	// Update sform
+	hdr->srow_x[0] = mat.m[0][0]; hdr->srow_x[1] = mat.m[0][1]; hdr->srow_x[2] = mat.m[0][2]; hdr->srow_x[3] = mat.m[0][3];
+	hdr->srow_y[0] = mat.m[1][0]; hdr->srow_y[1] = mat.m[1][1]; hdr->srow_y[2] = mat.m[1][2]; hdr->srow_y[3] = mat.m[1][3];
+	hdr->srow_z[0] = mat.m[2][0]; hdr->srow_z[1] = mat.m[2][1]; hdr->srow_z[2] = mat.m[2][2]; hdr->srow_z[3] = mat.m[2][3];
+	// Set transform codes
+	hdr->qform_code = NIFTI_XFORM_SCANNER_ANAT;
+	hdr->sform_code = NIFTI_XFORM_SCANNER_ANAT;
+}
+
 
 int nii_saveNII3Deq(char *niiFilename, struct nifti_1_header hdr, unsigned char *im, struct TDCMopts opts, struct TDICOMdata d, float *sliceMMarray) {
 	// convert image with unequal slice distances to equal slice distances
@@ -6358,6 +6449,7 @@ int nii_saveNII3Deq(char *niiFilename, struct nifti_1_header hdr, unsigned char 
 	uint8_t *out8 = (uint8_t *)malloc(nVox2D * outSlices * bytesPerVoxel);
 	float *out32 = (float *)out8;
 	short *out16 = (short *)out8;
+	int isSeg = d.modality == kMODALITY_SEG;
 	for (int s = 0; s < outSlices; s++) {
 		float out_mm = s * mn;
 		// Find the closest two input slices
@@ -6384,6 +6476,16 @@ int nii_saveNII3Deq(char *niiFilename, struct nifti_1_header hdr, unsigned char 
 		int lowVox = lowIdx * nVox2D;
 		int hiVox = hiIdx * nVox2D;
 		int outVox = s * nVox2D;
+		if (isSeg) {
+			// force nearest-neighbor: assign one weight to 1.0, the other to 0.0
+			if (lowWt >= hiWt) {
+				lowWt = 1.0f;
+				hiWt = 0.0f;
+			} else {
+				lowWt = 0.0f;
+				hiWt = 1.0f;
+			}
+		}
 		if (hdr.datatype == DT_FLOAT32) {
 			for (int v = 0; v < nVox2D; v++)
 				out32[outVox + v] =  (in32[lowVox + v] * lowWt) + (in32[hiVox + v] * hiWt);
@@ -6398,20 +6500,7 @@ int nii_saveNII3Deq(char *niiFilename, struct nifti_1_header hdr, unsigned char 
 	struct nifti_1_header hdrX = hdr;
 	hdrX.dim[3] = outSlices;
 	hdrX.pixdim[3] = mn;
-	// Compute magnitude of original srow_z vector
-	float orig_len = sqrt(
-			hdr.srow_z[0]*hdr.srow_z[0] +
-			hdr.srow_z[1]*hdr.srow_z[1] +
-			hdr.srow_z[2]*hdr.srow_z[2]);
-	if (opts.isVerbose > 0)  
-		printf("old sform %g pixdim[3] old %g new %g\n", orig_len, hdr.pixdim[3], mn);
-	// Avoid division by zero
-	if (orig_len > 0.0f) {
-			float scale = mn / orig_len; // new spacing over original spacing
-			hdrX.srow_z[0] = hdr.srow_z[0] * scale;
-			hdrX.srow_z[1] = hdr.srow_z[1] * scale;
-			hdrX.srow_z[2] = hdr.srow_z[2] * scale;
-	}
+	set_slice_spacing_preserve_orientation(&hdrX, mn);
 	// Remove rounding errors that seem like shear to ITK
 	deshear_sform(&hdrX);
 	char niiFilenameEq[2048] = {""};
@@ -6628,7 +6717,7 @@ void checkSliceTiming(struct TDICOMdata *d, struct TDICOMdata *d1, int verbose, 
 		return; // Philips does not provide slice timing details in DICOM
 	if (d->manufacturer == kMANUFACTURER_GE)
 		return; // compute directly from Protocol Block
-	if (d->modality == kMODALITY_PT)
+	if ((d->modality == kMODALITY_PT) || (d->modality == kMODALITY_US) || (d->modality == kMODALITY_CT) || (d->modality == kMODALITY_SEG))
 		return; // issue407
 	int nSlices = 0;
 	while ((nSlices < kMaxEPI3D) && (d->CSA.sliceTiming[nSlices] >= 0.0))
