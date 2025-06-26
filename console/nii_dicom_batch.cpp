@@ -3932,7 +3932,8 @@ int nii_createFilename(struct TDICOMdata dcm, char *niiFilename, struct TDCMopts
 					strcat(outname, "NA");
 			}
 			if (f == 'W') { // Weird includes personal data in filename patientWeight
-				snprintf(newstr, PATH_MAX, "dob%sg%cwt%d", dcm.patientBirthDate, dcm.patientSex, (int)round(dcm.patientWeight));
+				printf("polo %s\n", dcm.bodyPartExamined);
+				snprintf(newstr, PATH_MAX, "part%sdob%sg%cwt%d", dcm.bodyPartExamined, dcm.patientBirthDate, dcm.patientSex, (int)round(dcm.patientWeight));
 				if (strstr(dcm.institutionName, "Richland"))
 					strcat(newstr, "R");
 				strcat(outname, newstr);
@@ -10006,7 +10007,7 @@ int nii_loadDirCore(char *indir, struct TDCMopts *opts) {
 		if (opts->isIgnoreSeriesInstanceUID)
 			dcmList[i].seriesUidCrc = dcmList[i].seriesNum;
 		// if (!dcmList[i].isValid) printf(">>>>Not a valid DICOM %s\n", nameList.str[i]);
-		if ((dcmList[i].isValid) && ((dti4D->sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { // 4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
+		if ((dcmList[i].isValid) && ((dcmList[i].xyzDim[4] > 1) || (dti4D->sliceOrder[0] >= 0) || (dcmList[i].CSA.numDti > 1))) { // 4D dataset: dti4D arrays require huge amounts of RAM - write this immediately
 			struct TDCMsort dcmSort[1];
 			fillTDCMsort(dcmSort[0], i, dcmList[i]);
 			dcmList[i].converted2NII = 1;
