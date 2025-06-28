@@ -86,11 +86,14 @@ set(DCM2NIIX_SRCS
     main_console.cpp
     nii_dicom.cpp
     jpg_0XC3.cpp
-    ujpeg.cpp
     nifti1_io_core.cpp
     nii_foreign.cpp
     nii_ortho.cpp
     nii_dicom_batch.cpp)
+
+if(NOT USE_TURBOJPEG)
+    set(DCM2NIIX_SRCS ${DCM2NIIX_SRCS} ujpeg.cpp)
+endif()
 
 
 option(USE_JNIFTI "Build with JNIfTI support" ON)
@@ -101,6 +104,8 @@ endif()
 
 if(BUILD_DCM2NIIXFSLIB)
     set(DCM2NIIXFSLIB dcm2niixfs)
+    # BUILD_DCM2NIIXFSLIB and USE_TURBOJPEG are not allowed to be enabled at
+    # the same time, so ujpeg.cpp is unconditionaly in this sources list:
     set(DCM2NIIXFSLIB_SRCS
         dcm2niix_fswrapper.cpp
         nii_dicom.cpp
@@ -195,11 +200,14 @@ if(BATCH_VERSION)
         main_console_batch.cpp
         nii_dicom.cpp
         jpg_0XC3.cpp
-        ujpeg.cpp
         nifti1_io_core.cpp
         nii_foreign.cpp
         nii_ortho.cpp
         nii_dicom_batch.cpp)
+
+    if(NOT USE_TURBOJPEG)
+	set(DCM2NIIBATCH_SRCS ${DCM2NIIBATCH_SRCS} ujpeg.cpp)
+    endif()
 
     if(USE_JNIFTI)
         set(DCM2NIIBATCH_SRCS ${DCM2NIIBATCH_SRCS} cJSON.cpp base64.cpp)
